@@ -76,9 +76,9 @@ def call_api(endpoint: str, data: dict, method: str = "POST") -> dict | None:
         print(f"요청 데이터: {data}")
         
         if method == "POST":
-            response = requests.post(url, json=data, timeout=60)
+            response = requests.post(url, json=data, timeout=120)
         else:
-            response = requests.get(url, params=data, timeout=60)
+            response = requests.get(url, params=data, timeout=120)
         
         print(f"응답 상태: {response.status_code}")
         print(f"응답 내용: {response.text}")

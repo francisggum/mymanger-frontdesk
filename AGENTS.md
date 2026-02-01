@@ -50,6 +50,13 @@ docker-compose restart backend # 특정 서비스 재시작
 - 백엔드 API 문서: http://localhost:8000/docs
 - 헬스 체크: http://localhost:8000
 
+### 도커 빌드 중요 사항
+**중요:** 소스코드나 기타 주요 파일 변경 시 항상 도커를 새로 빌드해야 합니다.
+```bash
+docker-compose down          # 기존 컨테이너 중지
+docker-compose up --build    # 이미지 재빌드 및 컨테이너 시작
+```
+
 ### 환경 설정
 ```bash
 # 환경변수 템플릿 복사

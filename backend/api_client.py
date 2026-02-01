@@ -24,9 +24,9 @@ class ExternalAPIClient:
         try:
             timeout = httpx.Timeout(
                 connect=10.0,
-                read=50.0,
+                read=120.0,    # 50→120초로 증가
                 write=10.0,
-                pool=60.0
+                pool=120.0    # 60→120초로 증가
             )
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(url, params=params)
@@ -91,9 +91,9 @@ class ExternalAPIClient:
         try:
             timeout = httpx.Timeout(
                 connect=10.0,
-                read=50.0,
+                read=120.0,    # 50→120초로 증가
                 write=10.0,
-                pool=60.0
+                pool=120.0    # 60→120초로 증가
             )
             async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(url, params=params, headers=headers)

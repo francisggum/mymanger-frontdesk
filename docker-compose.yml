@@ -5,9 +5,11 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
+      - "5678:5678"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ENVIRONMENT=production
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG_MODE=${DEBUG_MODE:-true}
     volumes:
       - ./backend:/app
     networks:
