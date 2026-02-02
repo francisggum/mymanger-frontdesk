@@ -1,8 +1,12 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import os
+import json
+import asyncio
+import logging
 from dotenv import load_dotenv
 from api_client import api_client
 from data_manager import data_manager
@@ -10,6 +14,17 @@ from rag_system import rag_system
 import pandas as pd
 import numpy as np
 import math
+
+logger = logging.getLogger(__name__)
+if logger.handlers:
+    for handler in logger.handlers:
+        logger.removeHandler(handler)
+
+# 로깅 레벨 설정 (더 상세한 로그를 위해 INFO로 설정)
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 
 load_dotenv()
 
@@ -183,6 +198,90 @@ async def chat(request: ChatRequest):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat-stream")
+async def chat_stream(request: ChatRequest):
+    """
+    스트리밍 방식의 질의응답 엔드포인트
+    Server-Sent Events (SSE) 형식으로 실시간 진행 상태 전송
+    """
+
+    async def generate_stream():
+        logger.info(f"[BACKEND] Stream generation 시작 - 쿼리: '{request.query}'")
+        try:
+            # 현재 세션 정보 확인
+            session_info = data_manager.get_current_session_info()
+            logger.info(f"[BACKEND] 세션 정보 확인: {session_info}")
+
+            if (
+                not session_info["has_coverage_data"]
+                and not session_info["has_insurance_data"]
+            ):
+                logger.error("[BACKEND] 데이터 없음 오류")
+                error_data = {
+                    "status": "error",
+                    "message": "No data loaded. Please load data first using /load-data endpoint.",
+                }
+                error_json = json.dumps(error_data, ensure_ascii=False)
+                logger.info(f"[BACKEND] 에러 청크 전송: {error_json}")
+                yield f"data: {error_json}\n\n"
+                return
+
+            # 데이터 가져오기
+            logger.info("[BACKEND] 데이터 가져오기 시작")
+            coverage_df = data_manager.get_coverage_dataframe()
+            insurance_data = data_manager.get_insurance_data()
+            logger.info(f"[BACKEND] 데이터 가져오기 완료 - df shape: {coverage_df.shape if coverage_df is not None else None}, insurance_data: {len(insurance_data) if insurance_data else 0}")
+
+            # RAG 시스템 스트리밍 실행
+            logger.info("[BACKEND] RAG 시스템 스트리밍 호출 시작")
+            chunk_count = 0
+            async for chunk in rag_system.hybrid_chat_stream(
+                request.query, coverage_df, insurance_data
+            ):
+                chunk_count += 1
+                try:
+                    # JSON 직렬화 가능한지 확인하고 변환
+                    safe_chunk = _clean_for_json_serialization(chunk)
+                    chunk_json = json.dumps(safe_chunk, ensure_ascii=False)
+                    logger.info(f"[BACKEND] 청크 {chunk_count} 직렬화 완료: {len(chunk_json)}바이트")
+                    
+                    # SSE 형식으로 전송
+                    sse_data = f"data: {chunk_json}\n\n"
+                    logger.info(f"[BACKEND] 청크 {chunk_count} 전송: {safe_chunk.get('status', 'unknown')}, {safe_chunk.get('message', '')}")
+                    yield sse_data
+                    
+                except (TypeError, ValueError) as e:
+                    logger.error(f"[BACKEND] JSON 직렬화 오류: {e}, chunk: {chunk}")
+                    error_chunk = {
+                        "status": "error",
+                        "message": "Response serialization error",
+                    }
+                    error_json = json.dumps(error_chunk, ensure_ascii=False)
+                    yield f"data: {error_json}\n\n"
+                    break
+
+            logger.info(f"[BACKEND] Stream generation 완료 - 총 청크 수: {chunk_count}")
+
+        except Exception as e:
+            logger.error(f"[BACKEND] Stream generation error: {type(e).__name__}: {e}")
+            error_data = {"status": "error", "message": str(e)}
+            error_json = json.dumps(error_data, ensure_ascii=False)
+            yield f"data: {error_json}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Allow-Methods": "*",
+            "X-Accel-Buffering": "no",  # Nginx buffering 방지
+        },
+    )
 
 
 def _clean_for_json_serialization(data: Any) -> Any:

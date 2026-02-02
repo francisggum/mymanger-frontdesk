@@ -7,6 +7,7 @@ import time
 import json
 import base64
 import logging
+import threading
 from datetime import datetime, timedelta
 
 load_dotenv()
@@ -80,6 +81,29 @@ def clear_jwt_token():
 def show_loading(message="처리 중..."):
     """로딩 스피너 표시"""
     return st.spinner(message)
+
+
+def create_animated_message(message_base: str) -> str:
+    """애니메이션 메시지 생성 (점이 1~3개까지 늘어나는 효과)"""
+    dots = "." * ((int(time.time() * 2) % 3) + 1)  # 1, 2, 3개 점 순환
+    return f"{message_base}{dots}"
+
+
+def create_animated_loading_placeholder(container, message_base: str):
+    """애니메이션 로딩 메시지를 표시하는 함수"""
+    stop_animation = threading.Event()
+    
+    def update_animation():
+        while not stop_animation.is_set():
+            animated_message = create_animated_message(message_base)
+            container.markdown(f"**{animated_message}**")
+            time.sleep(0.5)  # 0.5초마다 애니메이션 업데이트
+    
+    # 애니메이션 스레드 시작
+    animation_thread = threading.Thread(target=update_animation, daemon=True)
+    animation_thread.start()
+    
+    return stop_animation
 
 
 def call_api(endpoint: str, data: dict, method: str = "POST") -> dict | None:
@@ -401,59 +425,128 @@ else:
             if use_streaming:
                 # 스트리밍 응답 처리
                 with st.container():
-                    # 상태 표시 컨테이너
+                    # 상태 표시 컨테이너 (애니메이션용)
                     status_container = st.empty()
                     progress_container = st.empty()
+                    # 애니메이션 컨트롤
+                    animation_stop = None
 
                     try:
+                        logger.info(f"[FRONTEND] 스트리밍 요청 시작 - 쿼리: '{prompt}'")
+                        
                         response = requests.post(
                             f"{BACKEND_URL}/chat-stream",
                             json={"query": prompt},
                             stream=True,
-                            timeout=120,
+                            timeout=180,
+                            headers={
+                                'Accept': 'text/event-stream',
+                                'Cache-Control': 'no-cache',
+                            }
                         )
+                        
+                        logger.info(f"[FRONTEND] 응답 상태 코드: {response.status_code}")
 
                         full_response = ""
                         current_status = ""
+                        line_count = 0
+                        chunk_count = 0
 
-                        for line in response.iter_lines(decode_unicode=False):
-                            # line이 bytes 타입으로 옴
-                            if isinstance(line, bytes):
+                        # 버퍼링을 방지하기 위해 iter_lines에 chunk_size 설정
+                        for line in response.iter_lines(decode_unicode=True, chunk_size=512):
+                            line_count += 1
+                            
+                            # 빈 라인도 로깅하여 스트리밍 흐름 확인
+                            if not line:
+                                logger.debug(f"[FRONTEND] 빈 라인 수신 (라인 {line_count})")
+                                continue
+                                
+                            if line.startswith("data: "):
+                                chunk_count += 1
                                 try:
-                                    line_text = line.decode("utf-8", errors="ignore")
-                                except:
-                                    continue
-                            else:
-                                line_text = line
-
-                            if line_text.startswith("data: "):
-                                try:
-                                    data = json.loads(line_text[6:])
+                                    json_text = line[6:]
+                                    data = json.loads(json_text)
+                                    
                                     status = data.get("status", "processing")
                                     message = data.get("message", "")
+                                    progress = data.get("progress", 0)
+                                    timestamp = data.get("timestamp", time.time())
+                                    
+                                    logger.info(f"[FRONTEND] 청크 {chunk_count} 수신: status={status}, message='{message}', progress={progress}%")
 
-                                    # 상태 메시지와 프로그레스 바 동기화
+                                    # Windows 인코딩 문제 처리
+                                    try:
+                                        safe_message = message.encode(
+                                            "utf-8", errors="ignore"
+                                        ).decode("utf-8")
+                                    except:
+                                        safe_message = str(message)
+
+                                    # 상태 메시지와 프로그레스 바 즉시 업데이트
                                     if status == "searching":
-                                        status_container.info("🔍 벡터 검색 중...")
-                                        progress_container.progress(0.3)
+                                        logger.info(f"[FRONTEND] searching 상태 업데이트: {safe_message}")
+                                        # 이전 애니메이션 중지
+                                        if animation_stop:
+                                            animation_stop.set()
+                                        # 새로운 애니메이션 시작
+                                        base_message = safe_message.replace("중...", "중")
+                                        animation_stop = create_animated_loading_placeholder(
+                                            status_container, base_message
+                                        )
+                                        progress_container.progress(progress / 100.0)
                                     elif status == "analyzing":
-                                        status_container.info("📊 Pandas 분석 중...")
-                                        progress_container.progress(0.6)
+                                        logger.info(f"[FRONTEND] analyzing 상태 업데이트: {safe_message}")
+                                        # 이전 애니메이션 중지
+                                        if animation_stop:
+                                            animation_stop.set()
+                                        # 새로운 애니메이션 시작
+                                        base_message = safe_message.replace("중...", "중")
+                                        animation_stop = create_animated_loading_placeholder(
+                                            status_container, base_message
+                                        )
+                                        progress_container.progress(progress / 100.0)
                                     elif status == "finalizing":
-                                        status_container.info("🤖 최종 LLM 분석 중...")
-                                        progress_container.progress(0.9)
+                                        logger.info(f"[FRONTEND] finalizing 상태 업데이트: {safe_message}")
+                                        # 이전 애니메이션 중지
+                                        if animation_stop:
+                                            animation_stop.set()
+                                        # 새로운 애니메이션 시작
+                                        base_message = safe_message.replace("중...", "중")
+                                        animation_stop = create_animated_loading_placeholder(
+                                            status_container, base_message
+                                        )
+                                        progress_container.progress(progress / 100.0)
                                     elif status == "complete":
+                                        logger.info(f"[FRONTEND] complete 상태 수신")
+                                        # 애니메이션 중지
+                                        if animation_stop:
+                                            animation_stop.set()
                                         status_container.success("✅ 분석 완료!")
                                         progress_container.progress(1.0)
                                         full_response = data.get("response", "")
+                                        logger.info(f"[FRONTEND] 최종 응답 수신 - 길이: {len(full_response)}")
                                     elif status == "error":
-                                        status_container.error(f"❌ 오류: {message}")
+                                        logger.error(f"[FRONTEND] error 상태 수신: {safe_message}")
+                                        # 애니메이션 중지
+                                        if animation_stop:
+                                            animation_stop.set()
+                                        status_container.error(f"❌ 오류: {safe_message}")
                                         progress_container.progress(1.0)
-                                        full_response = f"처리 중 오류 발생: {message}"
+                                        full_response = f"처리 중 오류 발생: {safe_message}"
 
-                                except json.JSONDecodeError:
+                                except json.JSONDecodeError as e:
+                                    logger.error(f"[FRONTEND] JSON 파싱 오류: {e}, 라인: {line}")
+                                    continue
+                                except Exception as e:
+                                    logger.error(f"[FRONTEND] 청크 처리 오류: {e}")
                                     continue
 
+                        logger.info(f"[FRONTEND] 스트리밍 완료 - 총 라인 수: {line_count}, 총 청크 수: {chunk_count}, 응답 길이: {len(full_response)}")
+                        
+                        # 애니메이션 정리
+                        if animation_stop:
+                            animation_stop.set()
+                        
                         # 최종 응답 표시
                         if full_response:
                             st.markdown(full_response)
@@ -468,6 +561,10 @@ else:
                             )
 
                     except Exception as e:
+                        logger.error(f"[FRONTEND] 스트리밍 요청 오류: {type(e).__name__}: {e}")
+                        # 애니메이션 정리
+                        if animation_stop:
+                            animation_stop.set()
                         error_msg = f"스트리밍 오류: {str(e)}"
                         st.markdown(error_msg)
                         st.session_state.messages.append(

@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 import logging
 import os
 import time
+import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1072,6 +1073,211 @@ Answer:"""
                 "data_analysis_available": False,
                 "source_count": 0,
             }
+
+    async def hybrid_chat_stream(
+        self, query: str, df: pd.DataFrame, insurance_data: List[Dict[str, Any]]
+    ):
+        """
+        스트리밍 방식의 Hybrid RAG 시스템 - 단계별 진행 상태 전송
+        """
+        start_time = time.time()
+        logger.info(f"[STREAM START] Streaming Hybrid RAG 챗 시작 - 쿼리: '{query}'")
+        
+        # 진행률 가중치 정의 (preparing을 searching에 통합)
+        PROGRESS_WEIGHTS = {
+            "searching": 0.25,      # 벡터 검색 + 데이터 준비 25%
+            "analyzing": 0.60,      # Pandas 분석 60%
+            "finalizing": 0.15      # 최종 정리 15%
+        }
+        
+        try:
+            logger.info(f"[STREAM] 스트리밍 시작 - 쿼리: '{query}'")
+            
+            # 1. 벡터 검색 단계
+            logger.info("[STREAM] 1단계: 벡터 검색 시작")
+            chunk1 = {
+                "status": "searching",
+                "message": "🔍 벡터 검색 중...",
+                "progress": 0.0,
+                "timestamp": time.time()
+            }
+            logger.info(f"[STREAM YIELD] 첫 번째 청크 전송: {chunk1}")
+            yield chunk1
+            
+            # 약간의 지연을 주어 청크가 전송되도록 함
+            await asyncio.sleep(0.1)
+            
+            search_start = time.time()
+            relevant_docs = self.search_relevant_docs(query)
+            search_time = time.time() - search_start
+            
+            logger.info(f"[STREAM] 벡터 검색 완료 - 찾은 문서 수: {len(relevant_docs)}, 소요 시간: {search_time:.2f}초")
+            
+            # 벡터 검색 완료 상태 전송
+            chunk2 = {
+                "status": "searching",
+                "message": f"🔍 벡터 검색 완료 ({len(relevant_docs)}개 문서 발견)",
+                "progress": PROGRESS_WEIGHTS["searching"] * 100,
+                "timestamp": time.time(),
+                "doc_count": len(relevant_docs)
+            }
+            logger.info(f"[STREAM YIELD] 벡터 검색 완료 청크 전송: {chunk2}")
+            yield chunk2
+            await asyncio.sleep(0.1)
+
+            # 2. 데이터 준비 단계 (searching 상태로 통합)
+            logger.info("[STREAM] 2단계: 데이터 준비 시작")
+            chunk3 = {
+                "status": "searching",
+                "message": "📋 데이터 준비 중...",
+                "progress": PROGRESS_WEIGHTS["searching"] * 100,
+                "timestamp": time.time()
+            }
+            logger.info(f"[STREAM YIELD] 데이터 준비 시작 청크 전송: {chunk3}")
+            yield chunk3
+            await asyncio.sleep(0.1)
+            
+            pandas_result = ""
+            aggregated_df = df  # 기본값으로 df 설정
+            
+            if df is not None and not df.empty:
+                # 데이터프레임 준비
+                from data_manager import data_manager
+                
+                try:
+                    if (data_manager.coverage_premiums_df is not None and 
+                        not data_manager.coverage_premiums_df.empty):
+                        logger.info("[STREAM] 집계 데이터프레임 생성 시작")
+                        normalized_df = data_manager.normalize_coverage_amounts(
+                            data_manager.coverage_premiums_df
+                        )
+                        aggregated_df = data_manager.aggregate_coverage_by_code(normalized_df)
+                        logger.info("[STREAM] 집계 데이터프레임 생성 완료")
+                except Exception as e:
+                    logger.warning(f"[STREAM] 집계 데이터프레임 생성 실패: {e}")
+                    aggregated_df = df  # 실패 시 원본 df 사용
+                
+            # 데이터 준비 완료 상태 전송
+            chunk4 = {
+                "status": "searching",
+                "message": "📋 데이터 준비 완료",
+                "progress": PROGRESS_WEIGHTS["searching"] * 100,
+                "timestamp": time.time(),
+                "data_shape": aggregated_df.shape if aggregated_df is not None else None
+            }
+            logger.info(f"[STREAM YIELD] 데이터 준비 완료 청크 전송: {chunk4}")
+            yield chunk4
+            await asyncio.sleep(0.1)
+
+            # 3. Pandas 분석 단계 (단순화)
+            if aggregated_df is not None and not aggregated_df.empty:
+                logger.info("[STREAM] 3단계: Pandas 분석 시작")
+                # 분석 시작 상태 전송
+                chunk5 = {
+                    "status": "analyzing",
+                    "message": "📊 Pandas 분석 중...",
+                    "progress": PROGRESS_WEIGHTS["searching"] * 100,
+                    "timestamp": time.time()
+                }
+                logger.info(f"[STREAM YIELD] Pandas 분석 시작 청크 전송: {chunk5}")
+                yield chunk5
+                await asyncio.sleep(0.1)
+                
+                # 실제 Pandas 분석 실행
+                try:
+                    logger.info("[STREAM] 실제 pandas_analysis 호출 시작")
+                    pandas_result = self.pandas_analysis(df, query, aggregated_df)
+                    logger.info(f"[STREAM] Pandas 분석 완료 - 결과 길이: {len(pandas_result) if pandas_result else 0}")
+                except Exception as e:
+                    logger.error(f"[STREAM] Pandas 분석 실패: {e}")
+                    pandas_result = f"데이터 분석 중 오류 발생: {str(e)}"
+                    
+                # 분석 완료 상태 전송
+                chunk6 = {
+                    "status": "analyzing",
+                    "message": "📊 Pandas 분석 완료",
+                    "progress": (PROGRESS_WEIGHTS["searching"] + 
+                              PROGRESS_WEIGHTS["analyzing"]) * 100,
+                    "timestamp": time.time(),
+                    "result_length": len(pandas_result) if pandas_result else 0
+                }
+                logger.info(f"[STREAM YIELD] Pandas 분석 완료 청크 전송: {chunk6}")
+                yield chunk6
+                await asyncio.sleep(0.1)
+
+            # 4. 최종 응답 생성
+            logger.info("[STREAM] 4단계: 최종 응답 생성 시작")
+            chunk7 = {
+                "status": "finalizing",
+                "message": "🤖 최종 응답 생성 중...",
+                "progress": (PROGRESS_WEIGHTS["searching"] + 
+                          PROGRESS_WEIGHTS["analyzing"] + 
+                          PROGRESS_WEIGHTS["finalizing"] * 0.5) * 100,
+                "timestamp": time.time()
+            }
+            logger.info(f"[STREAM YIELD] 최종 응답 생성 시작 청크 전송: {chunk7}")
+            yield chunk7
+            await asyncio.sleep(0.1)
+            
+            # 최종 응답 생성
+            logger.info("[STREAM] 최종 LLM 응답 생성 시작")
+            if relevant_docs and pandas_result:
+                context = "\n".join([doc["page_content"] for doc in relevant_docs])
+                prompt = f"""Based on the following context, please answer the question: {query}
+
+Context:
+{context}
+
+Answer:"""
+                qa_result = self.llm(
+                    model="gemini-3-pro-preview", contents=[prompt]
+                ).text
+                combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}\n\n📋 **보장내용 검색 결과:**\n{qa_result}"""
+            elif relevant_docs:
+                context = "\n".join([doc["page_content"] for doc in relevant_docs])
+                prompt = f"""Based on the following context, please answer the question: {query}
+
+Context:
+{context}
+
+Answer:"""
+                qa_result = self.llm(
+                    model="gemini-3-pro-preview", contents=[prompt]
+                ).text
+                combined_response = f"""📋 **보장내용 검색 결과:**\n{qa_result}"""
+            elif pandas_result:
+                combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}"""
+            else:
+                combined_response = "죄송합니다. 관련 정보를 찾을 수 없습니다."
+            
+            total_time = time.time() - start_time
+            logger.info(f"[STREAM COMPLETE] Streaming Hybrid RAG 완료 - 총 소요 시간: {total_time:.2f}초, 응답 길이: {len(combined_response)}")
+            
+            # 최종 완료 상태 전송
+            chunk8 = {
+                "status": "complete",
+                "message": "✅ 분석 완료!",
+                "progress": 100.0,
+                "response": combined_response,
+                "sources_found": len(relevant_docs) > 0,
+                "data_analysis_available": df is not None and not df.empty,
+                "source_count": len(relevant_docs),
+                "total_time": total_time,
+                "timestamp": time.time()
+            }
+            logger.info(f"[STREAM YIELD] 최종 완료 청크 전송: {chunk8}")
+            yield chunk8
+                
+        except Exception as e:
+            logger.error(f"[STREAM ERROR] Streaming Hybrid RAG 오류: {type(e).__name__}: {e}")
+            error_chunk = {
+                "status": "error",
+                "message": f"❌ 처리 중 오류 발생: {str(e)}",
+                "progress": 100.0,
+                "timestamp": time.time()
+            }
+            logger.info(f"[STREAM YIELD] 에러 청크 전송: {error_chunk}")
+            yield error_chunk
 
 
 # 전역 Hybrid RAG 시스템 인스턴스
