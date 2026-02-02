@@ -14,4 +14,4 @@ COPY . .
 EXPOSE 8000
 EXPOSE 5678
 
-CMD ["sh", "-c", "if [ \"$DEBUG_MODE\" = \"true\" ]; then python -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload; else uvicorn main:app --host 0.0.0.0 --port 8000; fi"]
+CMD ["sh", "-c", "if [ \"$DEBUG_MODE\" = \"true\" ]; then python -m debugpy --listen 0.0.0.0:5678 --wait-for-client -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload; else uvicorn main:app --host 0.0.0.0 --port 8000 --reload; fi"]

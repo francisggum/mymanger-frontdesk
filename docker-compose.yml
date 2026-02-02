@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   backend:
@@ -9,7 +9,8 @@ services:
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DEBUG_MODE=${DEBUG_MODE:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - PANDAS_ANALYSIS_STAGES=${PANDAS_ANALYSIS_STAGES:-2}
     volumes:
       - ./backend:/app
     networks:
