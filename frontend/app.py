@@ -407,7 +407,23 @@ else:
             st.markdown(message["content"])
 
     # 사용자 입력
-    if prompt := st.chat_input("보험료나 보장내용에 대해 질문해주세요"):
+    default_prompt = "뇌출혈 진단이 없는 회사는?" if os.getenv("ENVIRONMENT", "development") == "development" else ""
+    prompt = None
+    
+    # 개발 모드에서 기본값 버튼 제공 (첫 메시지가 없을 때만)
+    if default_prompt and len(st.session_state.messages) == 0:
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🚀 개발 모드 질문", help="개발용 기본 질문 사용"):
+                prompt = default_prompt
+        with col2:
+            st.caption("💡 개발 모드: 빠른 테스트용 기본 질문 버튼")
+    
+    # 항상 채팅 입력창 표시
+    if prompt is None:  # 버튼으로 입력되지 않았을 때만
+        prompt = st.chat_input("보험료나 보장내용에 대해 질문해주세요")
+    
+    if prompt:
         # 사용자 메시지 추가
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):

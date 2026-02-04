@@ -8,6 +8,7 @@ services:
       - "5678:5678"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DEBUG_MODE=${DEBUG_MODE:-false}
       - PANDAS_ANALYSIS_STAGES=${PANDAS_ANALYSIS_STAGES:-2}

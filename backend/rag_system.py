@@ -26,6 +26,7 @@ logging.basicConfig(
 # LangChain imports for pandas agent (with fallback handling)
 LANGCHAIN_AVAILABLE = False
 ChatGoogleGenerativeAI = None
+ChatOpenAI = None
 create_pandas_dataframe_agent = None
 ZERO_SHOT_REACT_DESCRIPTION = "zero-shot-react-description"
 TOOL_CALLING_DESCRIPTION = "tool-calling"
@@ -33,6 +34,7 @@ TOOL_CALLING_DESCRIPTION = "tool-calling"
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
     from langchain_experimental.agents import create_pandas_dataframe_agent
+    from langchain_openai import ChatOpenAI
 
     # 최신 LangChain 버전에서 agent_types 경로 변경
     try:
@@ -54,15 +56,21 @@ except ImportError as e:
         def __init__(self, *args, **kwargs):
             raise ImportError("LangChain packages not available")
 
+    class DummyChatOpenAI:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("LangChain packages not available")
+
     def dummy_create_pandas_dataframe_agent(*args, **kwargs):
         raise ImportError("LangChain packages not available")
 
     ChatGoogleGenerativeAI = DummyChatGoogleGenerativeAI
+    ChatOpenAI = DummyChatOpenAI
     create_pandas_dataframe_agent = dummy_create_pandas_dataframe_agent
 
 
 class HybridRAGSystem:
-    def __init__(self):
+    def __init__(self, llm_provider: str = "openai"):
+        self.llm_provider = llm_provider.lower()
         self.client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         self.embedding_model = self.client.models.embed_content
         self.llm = self.client.models.generate_content
@@ -72,7 +80,7 @@ class HybridRAGSystem:
         # 환경변수 또는 기본값으로 판다스 분석 단계 설정
         self.pandas_analysis_stages = int(os.getenv("PANDAS_ANALYSIS_STAGES", "2"))
         logger.debug(
-            f"HybridRAGSystem initialized with pandas_analysis_stages={os.getenv('PANDAS_ANALYSIS_STAGES')}"
+            f"HybridRAGSystem initialized with llm_provider={self.llm_provider}, pandas_analysis_stages={os.getenv('PANDAS_ANALYSIS_STAGES')}"
         )
 
     def _get_pandas_llm(self):
@@ -83,23 +91,46 @@ class HybridRAGSystem:
 
         if self._pandas_llm is None:
             try:
-                if ChatGoogleGenerativeAI is None:
-                    raise ImportError("ChatGoogleGenerativeAI not available")
+                if self.llm_provider == "gemini":
+                    if ChatGoogleGenerativeAI is None:
+                        raise ImportError("ChatGoogleGenerativeAI not available")
 
-                self._pandas_llm = ChatGoogleGenerativeAI(
-                    model="gemini-3-flash-preview",
-                    temperature=0,
-                    google_api_key=os.getenv("GOOGLE_API_KEY"),
-                    # convert_system_message_to_human=True,
-                    generate_content_config=types.GenerateContentConfig(
-                        thinking_config=types.ThinkingConfig(
-                            thinking_level="LOW",
-                        )
-                    ),
-                )
-                logger.info("LangChain ChatGoogleGenerativeAI 초기화 성공")
+                    model = "gemini-3-flash-preview"
+
+                    self._pandas_llm = ChatGoogleGenerativeAI(
+                        model=model,
+                        temperature=0,
+                        google_api_key=os.getenv("GOOGLE_API_KEY"),
+                        # convert_system_message_to_human=True,
+                        generate_content_config=types.GenerateContentConfig(
+                            thinking_config=types.ThinkingConfig(
+                                thinking_level="LOW",
+                            )
+                        ),
+                    )
+                    logger.info(
+                        f"LangChain ChatGoogleGenerativeAI 초기화 성공 - 사용 model: {model}"
+                    )
+                elif self.llm_provider == "openai":
+                    model = "qwen/qwen3-235b-a22b-2507"
+                    self._pandas_llm = ChatOpenAI(
+                        base_url="https://openrouter.ai/api/v1",
+                        # base_url="https://api.groq.com/openai/v1",
+                        model=model,
+                        temperature=0,
+                        openai_api_key=os.getenv("OPENAI_API_KEY"),
+                        default_headers={
+                            "HTTP-Referer": "http://localhost:8501",
+                            "X-Title": "MyManger Frontdesk",
+                        },
+                    )
+                    logger.info(
+                        f"LangChain ChatOpenAI 초기화 성공 - 사용 model: {model}"
+                    )
+                else:
+                    raise ValueError(f"지원되지 않는 LLM 제공업체: {self.llm_provider}")
             except Exception as e:
-                logger.error(f"LangChain ChatGoogleGenerativeAI 초기화 실패: {e}")
+                logger.error(f"LangChain {self.llm_provider} LLM 초기화 실패: {e}")
                 raise
         return self._pandas_llm
 
@@ -123,7 +154,7 @@ class HybridRAGSystem:
                 # agent_type=ZERO_SHOT_REACT_DESCRIPTION,
                 agent_type=TOOL_CALLING_DESCRIPTION,
                 handle_parsing_errors=True,
-                max_iterations=10,
+                max_iterations=20,
                 max_execution_time=120,
                 return_intermediate_steps=True,
                 allow_dangerous_code=True,
@@ -1082,44 +1113,46 @@ Answer:"""
         """
         start_time = time.time()
         logger.info(f"[STREAM START] Streaming Hybrid RAG 챗 시작 - 쿼리: '{query}'")
-        
+
         # 진행률 가중치 정의 (preparing을 searching에 통합)
         PROGRESS_WEIGHTS = {
-            "searching": 0.25,      # 벡터 검색 + 데이터 준비 25%
-            "analyzing": 0.60,      # Pandas 분석 60%
-            "finalizing": 0.15      # 최종 정리 15%
+            "searching": 0.25,  # 벡터 검색 + 데이터 준비 25%
+            "analyzing": 0.60,  # Pandas 분석 60%
+            "finalizing": 0.15,  # 최종 정리 15%
         }
-        
+
         try:
             logger.info(f"[STREAM] 스트리밍 시작 - 쿼리: '{query}'")
-            
+
             # 1. 벡터 검색 단계
             logger.info("[STREAM] 1단계: 벡터 검색 시작")
             chunk1 = {
                 "status": "searching",
                 "message": "🔍 벡터 검색 중...",
                 "progress": 0.0,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
             logger.info(f"[STREAM YIELD] 첫 번째 청크 전송: {chunk1}")
             yield chunk1
-            
+
             # 약간의 지연을 주어 청크가 전송되도록 함
             await asyncio.sleep(0.1)
-            
+
             search_start = time.time()
             relevant_docs = self.search_relevant_docs(query)
             search_time = time.time() - search_start
-            
-            logger.info(f"[STREAM] 벡터 검색 완료 - 찾은 문서 수: {len(relevant_docs)}, 소요 시간: {search_time:.2f}초")
-            
+
+            logger.info(
+                f"[STREAM] 벡터 검색 완료 - 찾은 문서 수: {len(relevant_docs)}, 소요 시간: {search_time:.2f}초"
+            )
+
             # 벡터 검색 완료 상태 전송
             chunk2 = {
                 "status": "searching",
                 "message": f"🔍 벡터 검색 완료 ({len(relevant_docs)}개 문서 발견)",
                 "progress": PROGRESS_WEIGHTS["searching"] * 100,
                 "timestamp": time.time(),
-                "doc_count": len(relevant_docs)
+                "doc_count": len(relevant_docs),
             }
             logger.info(f"[STREAM YIELD] 벡터 검색 완료 청크 전송: {chunk2}")
             yield chunk2
@@ -1131,39 +1164,45 @@ Answer:"""
                 "status": "searching",
                 "message": "📋 데이터 준비 중...",
                 "progress": PROGRESS_WEIGHTS["searching"] * 100,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
             logger.info(f"[STREAM YIELD] 데이터 준비 시작 청크 전송: {chunk3}")
             yield chunk3
             await asyncio.sleep(0.1)
-            
+
             pandas_result = ""
             aggregated_df = df  # 기본값으로 df 설정
-            
+
             if df is not None and not df.empty:
                 # 데이터프레임 준비
                 from data_manager import data_manager
-                
+
                 try:
-                    if (data_manager.coverage_premiums_df is not None and 
-                        not data_manager.coverage_premiums_df.empty):
+                    if (
+                        data_manager.coverage_premiums_df is not None
+                        and not data_manager.coverage_premiums_df.empty
+                    ):
                         logger.info("[STREAM] 집계 데이터프레임 생성 시작")
                         normalized_df = data_manager.normalize_coverage_amounts(
                             data_manager.coverage_premiums_df
                         )
-                        aggregated_df = data_manager.aggregate_coverage_by_code(normalized_df)
+                        aggregated_df = data_manager.aggregate_coverage_by_code(
+                            normalized_df
+                        )
                         logger.info("[STREAM] 집계 데이터프레임 생성 완료")
                 except Exception as e:
                     logger.warning(f"[STREAM] 집계 데이터프레임 생성 실패: {e}")
                     aggregated_df = df  # 실패 시 원본 df 사용
-                
+
             # 데이터 준비 완료 상태 전송
             chunk4 = {
                 "status": "searching",
                 "message": "📋 데이터 준비 완료",
                 "progress": PROGRESS_WEIGHTS["searching"] * 100,
                 "timestamp": time.time(),
-                "data_shape": aggregated_df.shape if aggregated_df is not None else None
+                "data_shape": (
+                    aggregated_df.shape if aggregated_df is not None else None
+                ),
             }
             logger.info(f"[STREAM YIELD] 데이터 준비 완료 청크 전송: {chunk4}")
             yield chunk4
@@ -1177,29 +1216,33 @@ Answer:"""
                     "status": "analyzing",
                     "message": "📊 Pandas 분석 중...",
                     "progress": PROGRESS_WEIGHTS["searching"] * 100,
-                    "timestamp": time.time()
+                    "timestamp": time.time(),
                 }
                 logger.info(f"[STREAM YIELD] Pandas 분석 시작 청크 전송: {chunk5}")
                 yield chunk5
                 await asyncio.sleep(0.1)
-                
+
                 # 실제 Pandas 분석 실행
                 try:
                     logger.info("[STREAM] 실제 pandas_analysis 호출 시작")
                     pandas_result = self.pandas_analysis(df, query, aggregated_df)
-                    logger.info(f"[STREAM] Pandas 분석 완료 - 결과 길이: {len(pandas_result) if pandas_result else 0}")
+                    logger.info(
+                        f"[STREAM] Pandas 분석 완료 - 결과 길이: {len(pandas_result) if pandas_result else 0}"
+                    )
                 except Exception as e:
                     logger.error(f"[STREAM] Pandas 분석 실패: {e}")
                     pandas_result = f"데이터 분석 중 오류 발생: {str(e)}"
-                    
+
                 # 분석 완료 상태 전송
                 chunk6 = {
                     "status": "analyzing",
                     "message": "📊 Pandas 분석 완료",
-                    "progress": (PROGRESS_WEIGHTS["searching"] + 
-                              PROGRESS_WEIGHTS["analyzing"]) * 100,
+                    "progress": (
+                        PROGRESS_WEIGHTS["searching"] + PROGRESS_WEIGHTS["analyzing"]
+                    )
+                    * 100,
                     "timestamp": time.time(),
-                    "result_length": len(pandas_result) if pandas_result else 0
+                    "result_length": len(pandas_result) if pandas_result else 0,
                 }
                 logger.info(f"[STREAM YIELD] Pandas 분석 완료 청크 전송: {chunk6}")
                 yield chunk6
@@ -1210,15 +1253,18 @@ Answer:"""
             chunk7 = {
                 "status": "finalizing",
                 "message": "🤖 최종 응답 생성 중...",
-                "progress": (PROGRESS_WEIGHTS["searching"] + 
-                          PROGRESS_WEIGHTS["analyzing"] + 
-                          PROGRESS_WEIGHTS["finalizing"] * 0.5) * 100,
-                "timestamp": time.time()
+                "progress": (
+                    PROGRESS_WEIGHTS["searching"]
+                    + PROGRESS_WEIGHTS["analyzing"]
+                    + PROGRESS_WEIGHTS["finalizing"] * 0.5
+                )
+                * 100,
+                "timestamp": time.time(),
             }
             logger.info(f"[STREAM YIELD] 최종 응답 생성 시작 청크 전송: {chunk7}")
             yield chunk7
             await asyncio.sleep(0.1)
-            
+
             # 최종 응답 생성
             logger.info("[STREAM] 최종 LLM 응답 생성 시작")
             if relevant_docs and pandas_result:
@@ -1249,10 +1295,12 @@ Answer:"""
                 combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}"""
             else:
                 combined_response = "죄송합니다. 관련 정보를 찾을 수 없습니다."
-            
+
             total_time = time.time() - start_time
-            logger.info(f"[STREAM COMPLETE] Streaming Hybrid RAG 완료 - 총 소요 시간: {total_time:.2f}초, 응답 길이: {len(combined_response)}")
-            
+            logger.info(
+                f"[STREAM COMPLETE] Streaming Hybrid RAG 완료 - 총 소요 시간: {total_time:.2f}초, 응답 길이: {len(combined_response)}"
+            )
+
             # 최종 완료 상태 전송
             chunk8 = {
                 "status": "complete",
@@ -1263,18 +1311,20 @@ Answer:"""
                 "data_analysis_available": df is not None and not df.empty,
                 "source_count": len(relevant_docs),
                 "total_time": total_time,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
             logger.info(f"[STREAM YIELD] 최종 완료 청크 전송: {chunk8}")
             yield chunk8
-                
+
         except Exception as e:
-            logger.error(f"[STREAM ERROR] Streaming Hybrid RAG 오류: {type(e).__name__}: {e}")
+            logger.error(
+                f"[STREAM ERROR] Streaming Hybrid RAG 오류: {type(e).__name__}: {e}"
+            )
             error_chunk = {
                 "status": "error",
                 "message": f"❌ 처리 중 오류 발생: {str(e)}",
                 "progress": 100.0,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
             logger.info(f"[STREAM YIELD] 에러 청크 전송: {error_chunk}")
             yield error_chunk
