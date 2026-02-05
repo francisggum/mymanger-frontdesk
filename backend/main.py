@@ -8,8 +8,7 @@ import json
 import asyncio
 import logging
 from dotenv import load_dotenv
-from api_client import api_client
-from data_manager import data_manager
+from database import db_manager
 from rag_system import rag_system
 import pandas as pd
 import numpy as np
@@ -39,12 +38,7 @@ app.add_middleware(
 )
 
 
-class JWTRequest(BaseModel):
-    jwt_token: str
-
-
 class LoadDataRequest(BaseModel):
-    jwt_token: str
     plan_id: str
     age: int
     gender: str
@@ -52,6 +46,7 @@ class LoadDataRequest(BaseModel):
 
 class ChatRequest(BaseModel):
     query: str
+    llm_data: Optional[Dict[str, Any]] = None
 
 
 class PlanInfo(BaseModel):
@@ -59,6 +54,7 @@ class PlanInfo(BaseModel):
     plan_name: str
     plan_type: Optional[str] = ""
     plan_type_name: Optional[str] = ""
+    insu_compy_type_name: Optional[str] = ""
     plan_payterm_type_name: Optional[str] = ""
     plan_min_m_age: Optional[int] = 0
     plan_max_m_age: Optional[int] = 0
@@ -72,17 +68,17 @@ async def root():
 
 
 @app.post("/fetch-plans", response_model=List[PlanInfo])
-async def fetch_plans(request: JWTRequest):
+async def fetch_plans():
     try:
-        plans = await api_client.fetch_plans(request.jwt_token)
+        plans = db_manager.fetch_plans()
         return [
             PlanInfo(
                 **{
                     **plan,
-                    "plan_min_m_age": int(plan.get("plan_min_m_age", 0)),
-                    "plan_max_m_age": int(plan.get("plan_max_m_age", 0)),
-                    "plan_min_f_age": int(plan.get("plan_min_f_age", 0)),
-                    "plan_max_f_age": int(plan.get("plan_max_f_age", 0)),
+                    "plan_min_m_age": int(plan.get("min_m_age", 0)),
+                    "plan_max_m_age": int(plan.get("max_m_age", 0)),
+                    "plan_min_f_age": int(plan.get("min_f_age", 0)),
+                    "plan_max_f_age": int(plan.get("max_f_age", 0)),
                 }
             )
             for plan in plans
@@ -91,103 +87,24 @@ async def fetch_plans(request: JWTRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/load-data")
-async def load_data(request: LoadDataRequest):
-    try:
-        # 외부 API에서 데이터 가져오기
-        premium_data = await api_client.fetch_product_premiums(
-            request.jwt_token, request.plan_id, request.age, request.gender
-        )
-
-        # 데이터 처리 및 저장
-        result = data_manager.process_premium_data(
-            premium_data, request.plan_id, request.age, request.gender
-        )
-
-        # RAG 시스템 초기화 (VectorDB)
-        insurance_data = data_manager.get_insurance_data()
-        if insurance_data:
-            vector_init_success = rag_system.initialize_vector_store(insurance_data)
-            result["vector_store_initialized"] = vector_init_success
-        else:
-            result["vector_store_initialized"] = False
-
-        return result
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/get-comparison-table")
-async def get_comparison_table():
-    """
-    현재 로드된 데이터를 기반으로 보험사별 보장 항목 비교 표 생성
-    """
-    try:
-        # 현재 세션 정보 확인
-        session_info = data_manager.get_current_session_info()
 
-        if not session_info["has_coverage_data"]:
-            raise HTTPException(
-                status_code=400,
-                detail="No coverage data loaded. Please load data first using /load-data endpoint.",
-            )
 
-        # 현재 데이터 가져오기 (가장 최근에 로드된 데이터 재사용)
-        if (
-            data_manager.coverage_premiums_df is None
-            or data_manager.coverage_premiums_df.empty
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="No coverage premiums data available. Please load data first.",
-            )
-
-        # 비교 표 생성
-        normalized_df = data_manager.normalize_coverage_amounts(
-            data_manager.coverage_premiums_df
-        )
-        aggregated_df = data_manager.aggregate_coverage_by_code(normalized_df)
-        comparison_table = data_manager.create_comparison_table(aggregated_df)
-
-        return {
-            "status": "success",
-            "session_info": session_info,
-            "comparison_table": _clean_for_json_serialization(
-                comparison_table.to_dict()
-            ),
-            "raw_aggregated_data": _clean_for_json_serialization(
-                aggregated_df.to_dict()
-            ),
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
     try:
-        # 현재 세션 정보 확인
-        session_info = data_manager.get_current_session_info()
-
-        if (
-            not session_info["has_coverage_data"]
-            and not session_info["has_insurance_data"]
-        ):
+        # 요청에 LLM 데이터가 있는지 확인
+        if not request.llm_data:
             raise HTTPException(
                 status_code=400,
-                detail="No data loaded. Please load data first using /load-data endpoint.",
+                detail="No LLM data provided. Please load data first using /get-comparison-tables endpoint.",
             )
 
-        # 데이터 가져오기
-        coverage_df = data_manager.get_coverage_dataframe()
-        insurance_data = data_manager.get_insurance_data()
-
-        # Hybrid RAG 시스템으로 질의응답
-        result = rag_system.hybrid_chat(request.query, coverage_df, insurance_data)
+        # Hybrid RAG 시스템으로 질의응답 (전달받은 데이터 사용)
+        result = rag_system.hybrid_chat_with_data(request.query, request.llm_data)
 
         # JSON 직렬화를 위해 데이터 정리
         cleaned_result = _clean_for_json_serialization(result)
@@ -197,6 +114,37 @@ async def chat(request: ChatRequest):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/get-comparison-tables")
+async def get_comparison_tables(request: LoadDataRequest):
+    """
+    보험료 비교표 생성 API
+    
+    사람이 읽기 편한 비교표와 LLM이 읽기 편한 비교표를 반환
+    """
+    try:
+        # 데이터베이스에서 비교표용 데이터 전처리
+        comparison_data = db_manager.process_premium_data_for_comparison(
+            request.plan_id, request.gender, request.age
+        )
+        
+
+        
+        # 로깅
+        logger.info(f"=== 비교표 생성 결과 ===")
+        logger.info(f"플랜 ID: {request.plan_id}, 성별: {request.gender}, 나이: {request.age}")
+        logger.info(f"총 회사 수: {comparison_data['summary']['total_companies']}")
+        logger.info(f"총 보장 수: {comparison_data['summary']['total_coverages']}")
+        logger.info(f"사람용 테이블 크기: {len(comparison_data['human_readable_table'])}")
+        logger.info(f"LLM용 데이터 크기: {len(comparison_data['llm_readable_data'])}")
+        logger.info("=== 비교표 생성 끝 ===")
+        
+        return comparison_data
+        
+    except Exception as e:
+        logger.error(f"비교표 생성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -210,35 +158,23 @@ async def chat_stream(request: ChatRequest):
     async def generate_stream():
         logger.info(f"[BACKEND] Stream generation 시작 - 쿼리: '{request.query}'")
         try:
-            # 현재 세션 정보 확인
-            session_info = data_manager.get_current_session_info()
-            logger.info(f"[BACKEND] 세션 정보 확인: {session_info}")
-
-            if (
-                not session_info["has_coverage_data"]
-                and not session_info["has_insurance_data"]
-            ):
-                logger.error("[BACKEND] 데이터 없음 오류")
+            # 요청에 LLM 데이터가 있는지 확인
+            if not request.llm_data:
+                logger.error("[BACKEND] LLM 데이터 없음 오류")
                 error_data = {
                     "status": "error",
-                    "message": "No data loaded. Please load data first using /load-data endpoint.",
+                    "message": "No LLM data provided. Please load data first using /get-comparison-tables endpoint.",
                 }
                 error_json = json.dumps(error_data, ensure_ascii=False)
                 logger.info(f"[BACKEND] 에러 청크 전송: {error_json}")
                 yield f"data: {error_json}\n\n"
                 return
 
-            # 데이터 가져오기
-            logger.info("[BACKEND] 데이터 가져오기 시작")
-            coverage_df = data_manager.get_coverage_dataframe()
-            insurance_data = data_manager.get_insurance_data()
-            logger.info(f"[BACKEND] 데이터 가져오기 완료 - df shape: {coverage_df.shape if coverage_df is not None else None}, insurance_data: {len(insurance_data) if insurance_data else 0}")
-
             # RAG 시스템 스트리밍 실행
             logger.info("[BACKEND] RAG 시스템 스트리밍 호출 시작")
             chunk_count = 0
-            async for chunk in rag_system.hybrid_chat_stream(
-                request.query, coverage_df, insurance_data
+            async for chunk in rag_system.hybrid_chat_stream_with_data(
+                request.query, request.llm_data
             ):
                 chunk_count += 1
                 try:

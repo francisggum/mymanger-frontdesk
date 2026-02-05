@@ -1,4 +1,3 @@
-import chromadb
 import google.genai as genai
 from google.genai import types
 import pandas as pd
@@ -72,9 +71,7 @@ class HybridRAGSystem:
     def __init__(self, llm_provider: str = "openai"):
         self.llm_provider = llm_provider.lower()
         self.client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-        self.embedding_model = self.client.models.embed_content
         self.llm = self.client.models.generate_content
-        self.vector_store = None
         self.qa_chain = None
         self._pandas_llm = None
         # 환경변수 또는 기본값으로 판다스 분석 단계 설정
@@ -233,245 +230,6 @@ class HybridRAGSystem:
             return base_prompt + "\n\n보험사별 차이점을 명확하게 비교 분석해주세요."
 
         return base_prompt
-
-    def initialize_vector_store(self, insurance_data: List[Dict[str, Any]]):
-        """
-        product_insur_premiums 데이터로 ChromaDB 벡터 저장소 초기화
-        """
-        try:
-            if not insurance_data:
-                logger.warning(
-                    "No insurance data provided for vector store initialization"
-                )
-                return False
-
-            # ChromaDB 클라이언트 생성
-            self.vector_store = chromadb.Client()
-
-            # 기존 컬렉션이 있으면 삭제
-            try:
-                self.vector_store.delete_collection("insurance_coverage")
-            except:
-                pass
-
-            self.collection = self.vector_store.create_collection(
-                name="insurance_coverage", metadata={"hnsw:space": "cosine"}
-            )
-
-            # 문서 준비
-            documents = []
-            metadatas = []
-            ids = []
-
-            for i, item in enumerate(insurance_data):
-                # insur_bojang(보장설명) 텍스트 추출
-                bojang_text = item.get("insur_bojang", "")
-                if bojang_text:
-                    documents.append(bojang_text)
-                    metadatas.append(
-                        {
-                            "plan_id": item.get("plan_id", ""),
-                            "insur_name": item.get("insur_name", ""),
-                            "insur_code": item.get("insur_code", ""),
-                            "premium_amount": str(item.get("premium_amount", 0)),
-                        }
-                    )
-                    ids.append(f"doc_{i}")
-
-            if not documents:
-                logger.warning("No valid documents created from insurance data")
-                return False
-
-            # 임베딩 생성 및 저장
-            logger.info(f"임베딩 생성 시작 - 문서 수: {len(documents)}")
-            start_time = time.time()
-
-            result = self.embedding_model(
-                model="gemini-embedding-001", contents=documents
-            )
-
-            # 임베딩 결과 확인
-            if not result or not hasattr(result, "embeddings") or not result.embeddings:
-                logger.error("임베딩 생성 실패: result가 비어있음")
-                return False
-
-            embeddings = []
-            for i, emb in enumerate(result.embeddings):
-                if emb and hasattr(emb, "values"):
-                    embeddings.append(emb.values)
-                else:
-                    logger.warning(f"임베딩 {i}가 비어있음")
-
-            if len(embeddings) != len(documents):
-                logger.error(
-                    f"임베딩 수({len(embeddings)})와 문서 수({len(documents)})가 일치하지 않음"
-                )
-                return False
-
-            logger.info(
-                f"임베딩 생성 완료 - 임베딩 수: {len(embeddings)}, 소요 시간: {time.time() - start_time:.2f}초"
-            )
-
-            # ChromaDB에 저장
-            logger.info("ChromaDB에 문서 저장 시작")
-            try:
-                # 임베딩 변환 시도
-                self.collection.add(
-                    embeddings=embeddings,  # 원본 임베딩 사용 (변환 시도 안 함)
-                    documents=documents,
-                    metadatas=metadatas,
-                    ids=ids,
-                )
-                logger.info("ChromaDB 저장 완료")
-            except Exception as e:
-                logger.error(f"ChromaDB 저장 실패 (첫 시도): {e}")
-
-                # fallback: 간단한 리스트로 변환 시도
-                try:
-                    simple_embeddings = []
-                    for emb in embeddings:
-                        if emb is not None:
-                            if hasattr(emb, "tolist"):
-                                simple_embeddings.append(emb.tolist())
-                            else:
-                                simple_embeddings.append(list(emb))
-                        else:
-                            simple_embeddings.append([])
-
-                    self.collection.add(
-                        embeddings=simple_embeddings,
-                        documents=documents,
-                        metadatas=metadatas,
-                        ids=ids,
-                    )
-                    logger.info("ChromaDB 저장 완료 (fallback)")
-                except Exception as e2:
-                    logger.error(f"ChromaDB 저장 실패 (fallback): {e2}")
-                    return False
-
-            logger.info(
-                f"Vector store initialized successfully with {len(documents)} documents"
-            )
-            return True
-
-        except Exception as e:
-            logger.error(f"Error initializing vector store: {e}")
-            return False
-
-    def search_relevant_docs(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """
-        쿼리와 관련된 문서 검색
-        """
-        start_time = time.time()
-        logger.info(f"문서 검색 시작 - 쿼리: '{query}', 검색 수: {k}")
-
-        try:
-            if not hasattr(self, "collection"):
-                logger.warning("Vector store not initialized")
-                return []
-
-            # 쿼리 임베딩 생성
-            logger.info("쿼리 임베딩 생성 시작")
-            embedding_start = time.time()
-
-            query_embedding_result = self.embedding_model(
-                model="gemini-embedding-001", contents=[query]
-            )
-
-            if (
-                not query_embedding_result
-                or not hasattr(query_embedding_result, "embeddings")
-                or not query_embedding_result.embeddings
-                or len(query_embedding_result.embeddings) == 0
-                or not hasattr(query_embedding_result.embeddings[0], "values")
-            ):
-                logger.error("쿼리 임베딩 생성 실패")
-                return []
-
-            query_embedding = query_embedding_result.embeddings[0].values
-            logger.info(
-                f"쿼리 임베딩 생성 완료 - 소요 시간: {time.time() - embedding_start:.2f}초"
-            )
-
-            # 검색
-            logger.info("벡터 검색 시작")
-            search_start = time.time()
-
-            # 쿼리 임베딩 처리
-            if query_embedding is None:
-                logger.error("쿼리 임베딩이 None")
-                return []
-
-            # ChromaDB 쿼리 - 여러 형식 시도
-            try:
-                # 첫 시도: 원본 임베딩 사용
-                results = self.collection.query(
-                    query_embeddings=[query_embedding], n_results=k
-                )
-            except Exception as e1:
-                logger.warning(f"첫 쿼리 시도 실패: {e1}")
-                try:
-                    # 두 번째 시도: 리스트로 변환
-                    import numpy as np
-
-                    query_array = np.array(query_embedding, dtype=np.float32)
-                    results = self.collection.query(
-                        query_embeddings=[query_array], n_results=k
-                    )
-                except Exception as e2:
-                    logger.error(f"쿼리 실패: {e2}")
-                    return []
-
-            logger.info(
-                f"벡터 검색 완료 - 소요 시간: {time.time() - search_start:.2f}초"
-            )
-
-            # 결과 포맷팅
-            docs = []
-            if (
-                results
-                and isinstance(results, dict)
-                and "documents" in results
-                and results["documents"]
-                and len(results["documents"]) > 0
-                and results["documents"][0]
-            ):
-
-                documents_list = results["documents"][0]  # 첫 번째 결과 세트
-                metadatas_list = []
-                if (
-                    results.get("metadatas")
-                    and isinstance(results["metadatas"], list)
-                    and len(results["metadatas"]) > 0
-                    and results["metadatas"][0]
-                ):
-                    metadatas_list = results["metadatas"][0]
-
-                for i in range(len(documents_list)):
-                    doc_data = {
-                        "page_content": (
-                            documents_list[i] if i < len(documents_list) else ""
-                        ),
-                        "metadata": (
-                            metadatas_list[i] if i < len(metadatas_list) else {}
-                        ),
-                    }
-                    docs.append(doc_data)
-                    content_length = len(str(doc_data["page_content"]))
-                    logger.debug(
-                        f"문서 {i+1}: {doc_data['metadata'].get('insur_name', 'Unknown')} - {content_length}자"
-                    )
-
-            total_time = time.time() - start_time
-            logger.info(
-                f"문서 검색 완료 - 찾은 문서 수: {len(docs)}, 총 소요 시간: {total_time:.2f}초"
-            )
-            return docs
-
-        except Exception as e:
-            logger.error(f"문서 검색 중 오류 발생: {e}")
-            logger.error(f"오류 상세: {type(e).__name__}: {str(e)}")
-            return []
 
     def _execute_fallback_analysis(
         self, df: pd.DataFrame, query: str
@@ -995,31 +753,276 @@ class HybridRAGSystem:
         else:
             return f"❌ 분석 중 오류가 발생했습니다: {str(error)} (오류 타입: {error_type})"
 
+    def hybrid_chat_with_data(
+        self, query: str, llm_data: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        전달받은 LLM 데이터를 사용한 질의응답 - DataFrame 생성 없이 직접 처리
+        """
+        start_time = time.time()
+        logger.info(f"Hybrid Chat with Data 시작 - 쿼리: '{query}'")
+        logger.info(f"LLM 데이터 크기: {len(llm_data)}")
+
+        try:
+            # 1. LLM 데이터를 통한 직접 분석
+            logger.info("1단계: LLM 데이터 분석 시작")
+            analysis_start = time.time()
+
+            # LLM 데이터를 분석 가능한 형태로 변환
+            analysis_result = self._analyze_llm_data(query, llm_data)
+
+            analysis_time = time.time() - analysis_start
+            logger.info(
+                f"1단계 완료: LLM 데이터 분석 - 소요 시간: {analysis_time:.2f}초"
+            )
+
+            # 2. 종합 응답 생성
+            logger.info("2단계: 종합 응답 생성")
+            response_start = time.time()
+
+            # 데이터 분석 결과를 기반으로 최종 응답 생성
+            final_response = self._generate_final_response_with_data_simple(
+                query, analysis_result, llm_data
+            )
+
+            response_time = time.time() - response_start
+            total_time = time.time() - start_time
+            logger.info(
+                f"2단계 완료: 종합 응답 생성 - 소요 시간: {response_time:.2f}초"
+            )
+            logger.info(f"전체 처리 완료 - 총 소요 시간: {total_time:.2f}초")
+
+            return {
+                "response": final_response,
+                "data_analysis_available": True,
+                "processing_time": total_time,
+                "analysis_result": analysis_result,
+            }
+
+        except Exception as e:
+            error_msg = f"Hybrid Chat with Data 처리 중 오류 발생: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "response": f"처리 중 오류가 발생했습니다: {str(e)}",
+                "data_analysis_available": False,
+                "processing_time": time.time() - start_time,
+                "error": error_msg,
+            }
+
+    def _analyze_llm_data(self, query: str, llm_data: Dict[str, Any]) -> str:
+        """LLM 데이터를 분석하여 관련 정보 추출"""
+        try:
+            analysis_parts = []
+
+            # 회사별 보장 정보 분석
+            for company_key, coverages in llm_data.items():
+                if isinstance(coverages, list):
+                    company_name = company_key.split("_")[0]  # 회사명 추출
+                    analysis_parts.append(f"## {company_name} 보장 정보:")
+
+                    for coverage in coverages:
+                        coverage_name = coverage.get("coverage_name", "알 수 없는 보장")
+                        coverage_code = coverage.get("coverage_code", "")
+                        premium = coverage.get("sum_premium", 0)
+                        max_amount = coverage.get("guide_contract_amount_max", 0)
+
+                        analysis_parts.append(
+                            f"- {coverage_name}({coverage_code}): 보험료 {premium:,}원, 최대 보장 {max_amount:,}원"
+                        )
+
+                    analysis_parts.append("")
+
+            # 전체 요약
+            total_companies = len(llm_data)
+            total_coverages = sum(
+                len(coverages) if isinstance(coverages, list) else 0
+                for coverages in llm_data.values()
+            )
+            analysis_parts.append(f"## 전체 요약")
+            analysis_parts.append(f"- 총 {total_companies}개 보험사")
+            analysis_parts.append(f"- 총 {total_coverages}개 보장 항목")
+
+            return "\n".join(analysis_parts)
+
+        except Exception as e:
+            logger.error(f"LLM 데이터 분석 오류: {e}")
+            return "데이터 분석 중 오류가 발생했습니다."
+
+    def _generate_final_response_with_data_simple(
+        self,
+        query: str,
+        analysis_result: str,
+        llm_data: Dict[str, Any],
+    ) -> str:
+        """전달받은 데이터를 기반으로 최종 응답 생성 (벡터 검색 없음)"""
+        try:
+            # LangChain이 사용 가능한 경우
+            if LANGCHAIN_AVAILABLE and self._pandas_llm:
+                # 분석 결과를 기반으로 프롬프트 생성
+                prompt = f"""
+                다음은 사용자 질문과 보험료 비교 데이터 분석 결과입니다:
+
+                **사용자 질문:** {query}
+
+                **보험 데이터 분석:**
+                {analysis_result}
+
+                위 정보를 바탕으로 사용자 질문에 정확하고 친절하게 답변해주세요. 
+                구체적인 수치와 비교 분석을 포함해주세요.
+                """
+
+                response = self._pandas_llm.invoke(prompt)
+                return response.content if hasattr(response, 'content') else str(response)
+            else:
+                # LangChain을 사용할 수 없는 경우 간단한 응답 생성
+                return self._generate_simple_response_with_data(
+                    query, analysis_result, llm_data
+                )
+
+        except Exception as e:
+            logger.error(f"최종 응답 생성 오류: {e}")
+            return self._generate_simple_response_with_data(
+                query, analysis_result, llm_data
+            )
+
+
+
+    def _generate_simple_response_with_data(
+        self, query: str, analysis_result: str, llm_data: Dict[str, Any]
+    ) -> str:
+        """LangChain 없이 간단한 응답 생성"""
+        try:
+            # 간단한 키워드 기반 응답
+            query_lower = query.lower()
+
+            if "가장 저렴" in query_lower or "쌉" in query_lower or "싼" in query_lower:
+                # 최저 보험료 회사 찾기
+                cheapest_company = None
+                cheapest_premium = float("inf")
+
+                for company_key, coverages in llm_data.items():
+                    if isinstance(coverages, list):
+                        total_premium = sum(
+                            coverage.get("sum_premium", 0) for coverage in coverages
+                        )
+                        if total_premium < cheapest_premium:
+                            cheapest_premium = total_premium
+                            cheapest_company = company_key.split("_")[0]
+
+                if cheapest_company:
+                    return f"가장 저렴한 보험사는 **{cheapest_company}**이며, 총 보험료는 {cheapest_premium:,.0f}원입니다.\n\n{analysis_result}"
+
+            elif "보장" in query_lower or "항목" in query_lower:
+                return f"보장 항목에 대한 분석 결과입니다:\n\n{analysis_result}"
+
+            else:
+                return f"질문에 대한 분석 결과입니다:\n\n{analysis_result}"
+
+        except Exception as e:
+            logger.error(f"간단 응답 생성 오류: {e}")
+            return f"질문 처리 중 오류가 발생했습니다. 분석 결과:\n{analysis_result}"
+
+    async def hybrid_chat_stream_with_data(
+        self, query: str, llm_data: Dict[str, Any]
+    ) -> Any:
+        """
+        전달받은 LLM 데이터를 사용한 스트리밍 질의응답
+        """
+        start_time = time.time()
+        logger.info(f"Hybrid Chat Stream with Data 시작 - 쿼리: '{query}'")
+        logger.info(f"LLM 데이터 크기: {len(llm_data)}")
+
+        try:
+            # 1. LLM 데이터 분석 시작
+            logger.info("1단계: LLM 데이터 분석 시작")
+            yield {
+                "status": "analyzing",
+                "message": "보험 데이터 분석 중...",
+                "progress": 40,
+                "timestamp": time.time(),
+            }
+
+            analysis_start = time.time()
+
+            # LLM 데이터를 분석 가능한 형태로 변환
+            analysis_result = self._analyze_llm_data(query, llm_data)
+
+            analysis_time = time.time() - analysis_start
+            logger.info(
+                f"1단계 완료: LLM 데이터 분석 - 소요 시간: {analysis_time:.2f}초"
+            )
+
+            yield {
+                "status": "analyzing",
+                "message": f"데이터 분석 완료 (총 {len(llm_data)}개사)",
+                "progress": 70,
+                "timestamp": time.time(),
+            }
+
+            # 2. 종합 응답 생성
+            logger.info("2단계: 종합 응답 생성")
+            yield {
+                "status": "finalizing",
+                "message": "최종 응답 생성 중...",
+                "progress": 90,
+                "timestamp": time.time(),
+            }
+
+            response_start = time.time()
+
+            # 데이터 분석 결과를 기반으로 최종 응답 생성
+            final_response = self._generate_final_response_with_data_simple(
+                query, analysis_result, llm_data
+            )
+
+            response_time = time.time() - response_start
+            total_time = time.time() - start_time
+            logger.info(
+                f"2단계 완료: 종합 응답 생성 - 소요 시간: {response_time:.2f}초"
+            )
+            logger.info(f"전체 처리 완료 - 총 소요 시간: {total_time:.2f}초")
+
+            # 최종 응답 전송
+            yield {
+                "status": "complete",
+                "message": "분석 완료!",
+                "progress": 100,
+                "response": final_response,
+                "data_analysis_available": True,
+                "processing_time": total_time,
+                "analysis_result": analysis_result,
+                "timestamp": time.time(),
+            }
+
+        except Exception as e:
+            error_msg = f"Hybrid Chat Stream with Data 처리 중 오류 발생: {str(e)}"
+            logger.error(error_msg)
+            yield {
+                "status": "error",
+                "message": f"처리 중 오류가 발생했습니다: {str(e)}",
+                "data_analysis_available": False,
+                "processing_time": time.time() - start_time,
+                "error": error_msg,
+                "timestamp": time.time(),
+            }
+
     def hybrid_chat(
         self, query: str, df: pd.DataFrame, insurance_data: List[Dict[str, Any]]
     ) -> Dict[str, Any]:
         """
-        Hybrid RAG 시스템을 사용한 종합적인 질의응답 - 비교 표 활용
+        데이터 분석 기반 질의응답 - 비교 표 활용
         """
         start_time = time.time()
-        logger.info(f"Hybrid RAG 챗 시작 - 쿼리: '{query}'")
+        logger.info(f"Hybrid Chat 시작 - 쿼리: '{query}'")
         logger.info(
             f"입력 데이터 - DataFrame 형태: {df.shape if df is not None else 'None'}, 보험 데이터 수: {len(insurance_data) if insurance_data else 0}"
         )
 
         try:
-            # 1. 벡터 검색을 통한 관련 문서 검색
-            logger.info("1단계: 벡터 검색 시작")
-            search_start = time.time()
-            relevant_docs = self.search_relevant_docs(query)
-            search_time = time.time() - search_start
-            logger.info(
-                f"1단계 완료: 벡터 검색 - 찾은 문서 수: {len(relevant_docs)}, 소요 시간: {search_time:.2f}초"
-            )
+            # 1. Pandas 데이터 분석
 
             # 2. 비교 표 생성 및 Pandas 데이터 분석
             pandas_result = ""
-            comparison_table = None
 
             if df is not None and not df.empty:
                 # 집계 데이터프레임 생성 시도
@@ -1053,56 +1056,22 @@ class HybridRAGSystem:
                     pandas_result = self.pandas_analysis(df, query)
 
             # 3. 종합 응답 생성
-            if relevant_docs and pandas_result:
-                # 두 가지 결과 모두 있는 경우
-                # Simple document-based QA using LLM directly
-                context = "\n".join([doc["page_content"] for doc in relevant_docs])
-                prompt = f"""Based on the following context, please answer the question: {query}
-
-Context:
-{context}
-
-Answer:"""
-                qa_result = self.llm(
-                    model="gemini-3-flash-preview", contents=[prompt]
-                ).text
-                combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}\n\n📋 **보장내용 검색 결과:**\n{qa_result}"""
-
-            elif relevant_docs:
-                # 문서 검색 결과만 있는 경우
-                context = "\n".join([doc["page_content"] for doc in relevant_docs])
-                prompt = f"""Based on the following context, please answer the question: {query}
-
-Context:
-{context}
-
-Answer:"""
-                qa_result = self.llm(
-                    model="gemini-3-flash-preview", contents=[prompt]
-                ).text
-                combined_response = f"""📋 **보장내용 검색 결과:**\n{qa_result}"""
-
-            elif pandas_result:
-                # Pandas 분석 결과만 있는 경우
+            if pandas_result:
+                # Pandas 분석 결과가 있는 경우
                 combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}"""
-
             else:
                 combined_response = "죄송합니다. 관련 정보를 찾을 수 없습니다."
 
             return {
                 "response": combined_response,
-                "sources_found": len(relevant_docs) > 0,
                 "data_analysis_available": df is not None and not df.empty,
-                "source_count": len(relevant_docs),
             }
 
         except Exception as e:
             logger.error(f"Error in hybrid chat: {e}")
             return {
                 "response": f"죄송합니다. 처리 중 오류가 발생했습니다: {str(e)}",
-                "sources_found": False,
                 "data_analysis_available": False,
-                "source_count": 0,
             }
 
     async def hybrid_chat_stream(
@@ -1138,25 +1107,7 @@ Answer:"""
             # 약간의 지연을 주어 청크가 전송되도록 함
             await asyncio.sleep(0.1)
 
-            search_start = time.time()
-            relevant_docs = self.search_relevant_docs(query)
-            search_time = time.time() - search_start
-
-            logger.info(
-                f"[STREAM] 벡터 검색 완료 - 찾은 문서 수: {len(relevant_docs)}, 소요 시간: {search_time:.2f}초"
-            )
-
-            # 벡터 검색 완료 상태 전송
-            chunk2 = {
-                "status": "searching",
-                "message": f"🔍 벡터 검색 완료 ({len(relevant_docs)}개 문서 발견)",
-                "progress": PROGRESS_WEIGHTS["searching"] * 100,
-                "timestamp": time.time(),
-                "doc_count": len(relevant_docs),
-            }
-            logger.info(f"[STREAM YIELD] 벡터 검색 완료 청크 전송: {chunk2}")
-            yield chunk2
-            await asyncio.sleep(0.1)
+            # 데이터 준비 단계 시작
 
             # 2. 데이터 준비 단계 (searching 상태로 통합)
             logger.info("[STREAM] 2단계: 데이터 준비 시작")
@@ -1266,39 +1217,15 @@ Answer:"""
             await asyncio.sleep(0.1)
 
             # 최종 응답 생성
-            logger.info("[STREAM] 최종 LLM 응답 생성 시작")
-            if relevant_docs and pandas_result:
-                context = "\n".join([doc["page_content"] for doc in relevant_docs])
-                prompt = f"""Based on the following context, please answer the question: {query}
-
-Context:
-{context}
-
-Answer:"""
-                qa_result = self.llm(
-                    model="gemini-3-pro-preview", contents=[prompt]
-                ).text
-                combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}\n\n📋 **보장내용 검색 결과:**\n{qa_result}"""
-            elif relevant_docs:
-                context = "\n".join([doc["page_content"] for doc in relevant_docs])
-                prompt = f"""Based on the following context, please answer the question: {query}
-
-Context:
-{context}
-
-Answer:"""
-                qa_result = self.llm(
-                    model="gemini-3-pro-preview", contents=[prompt]
-                ).text
-                combined_response = f"""📋 **보장내용 검색 결과:**\n{qa_result}"""
-            elif pandas_result:
+            logger.info("[STREAM] 최종 응답 생성 시작")
+            if pandas_result:
                 combined_response = f"""📊 **데이터 분석 결과:**\n{pandas_result}"""
             else:
                 combined_response = "죄송합니다. 관련 정보를 찾을 수 없습니다."
 
             total_time = time.time() - start_time
             logger.info(
-                f"[STREAM COMPLETE] Streaming Hybrid RAG 완료 - 총 소요 시간: {total_time:.2f}초, 응답 길이: {len(combined_response)}"
+                f"[STREAM COMPLETE] Streaming Chat 완료 - 총 소요 시간: {total_time:.2f}초, 응답 길이: {len(combined_response)}"
             )
 
             # 최종 완료 상태 전송
@@ -1307,9 +1234,7 @@ Answer:"""
                 "message": "✅ 분석 완료!",
                 "progress": 100.0,
                 "response": combined_response,
-                "sources_found": len(relevant_docs) > 0,
                 "data_analysis_available": df is not None and not df.empty,
-                "source_count": len(relevant_docs),
                 "total_time": total_time,
                 "timestamp": time.time(),
             }
