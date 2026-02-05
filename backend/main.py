@@ -93,28 +93,7 @@ async def fetch_plans():
 
 
 
-@app.post("/chat")
-async def chat(request: ChatRequest):
-    try:
-        # 요청에 LLM 데이터가 있는지 확인
-        if not request.llm_data:
-            raise HTTPException(
-                status_code=400,
-                detail="No LLM data provided. Please load data first using /get-comparison-tables endpoint.",
-            )
 
-        # Hybrid RAG 시스템으로 질의응답 (전달받은 데이터 사용)
-        result = rag_system.hybrid_chat_with_data(request.query, request.llm_data)
-
-        # JSON 직렬화를 위해 데이터 정리
-        cleaned_result = _clean_for_json_serialization(result)
-
-        return cleaned_result
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/get-comparison-tables")

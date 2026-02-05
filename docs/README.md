@@ -70,7 +70,7 @@ docker-compose up --build -d
 ### 내부 API 엔드포인트
 - `POST /fetch-plans` - 플랜 목록 조회
 - `POST /load-data` - 보험료 데이터 로드 및 RAG 처리
-- `POST /chat` - Hybrid RAG 기반 질의응답
+- `POST /chat-stream` - Hybrid RAG 기반 스트리밍 질의응답
 
 ## 🤖 RAG 아키텍처
 
