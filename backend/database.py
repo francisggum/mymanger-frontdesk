@@ -19,7 +19,7 @@ class DatabaseManager:
     """MSSQL 데이터베이스 관리자"""
 
     def __init__(self):
-        self.server = os.getenv("DB_SERVER", "localhost")
+        self.server = os.getenv("DB_HOST", "localhost")
         self.database = os.getenv("DB_NAME", "mmapi")
         self.username = os.getenv("DB_USER")
         self.password = os.getenv("DB_PASSWORD")
@@ -453,7 +453,7 @@ class DatabaseManager:
             logger.error(f"float 포맷팅 오류: {e}, value: {value}")
             return f"{prefix}0{suffix}"
 
-    def _create_human_readable_table(self, df: pd.DataFrame) -> Dict[str, Any]:
+    def _create_human_readable_table(self, df: pd.DataFrame) -> str:
         """
         사람이 읽기 편한 피벗 테이블 생성
 
@@ -465,13 +465,15 @@ class DatabaseManager:
         """
         try:
             # 인덱스 컬럼 생성: coverage_name(coverage_code:guide_contract_amount_max)
-            df["index_name"] = df.apply(
-                lambda row: self._safe_float_format(
-                    row["guide_contract_amount_max"],
-                    f"{row['coverage_name']}({row['coverage_cd']}:",
-                    ")",
-                ),
-                axis=1,
+            df["coverage_name(coverage_code:guide_contract_amount_max[만원])"] = (
+                df.apply(
+                    lambda row: self._safe_float_format(
+                        row["guide_contract_amount_max"],
+                        f"{row['coverage_name']}({row['coverage_cd']}:",
+                        ")",
+                    ),
+                    axis=1,
+                )
             )
 
             # 컬럼명 생성: company_name(company_code)
@@ -487,32 +489,62 @@ class DatabaseManager:
 
             # 피벗 테이블 생성
             pivot_df = df.pivot_table(
-                index="index_name",
+                index="coverage_name(coverage_code:guide_contract_amount_max[만원])",
                 columns="column_name",
                 values="cell_value",
                 aggfunc="first",
             ).fillna("")
 
-            # JSON 직렬화를 위해 변환
-            result = {}
-            for index in pivot_df.index:
-                result[index] = {}
-                for col in pivot_df.columns:
-                    cell_value = pivot_df.loc[index, col]
-                    result[index][col] = (
-                        cell_value
-                        if pd.notna(cell_value) and str(cell_value) != "nan"
-                        else ""
-                    )
+            # 보험사별 총 보험료 합계 계산
+            company_totals = df.groupby("column_name")["sum_premium"].sum()
+            
+            # 합계 행 생성 (맨 위에 추가할 행)
+            total_row = {}
+            for col in pivot_df.columns:
+                if col in company_totals.index:
+                    total_value = company_totals[col]
+                    total_row[col] = f"{self._safe_float_format(total_value, '', '')}"
+                else:
+                    total_row[col] = ""
+            
+            # 합계 행을 DataFrame으로 변환하고 기존 피벗 테이블과 결합
+            total_df = pd.DataFrame([total_row], index=["**보험사별 총 보험료 합계**"])
+            
+            # 합계 행을 맨 위에 추가
+            pivot_df = pd.concat([total_df, pivot_df])
+
+            # JSON 직렬화를 위해 변환 (pandas to_json 사용)
+            json_result = pivot_df.fillna("").to_json(orient="table")
+            result = (
+                json_result
+                if json_result is not None
+                else '{"schema":{"fields":[],"primaryKey":[],"pandas_version":"1.4.0"},"data":[]}'
+            )
 
             logger.info(
-                f"사람용 비교표 생성 완료: {len(result)}행 x {len(pivot_df.columns)}열"
+                f"사람용 비교표 생성 완료: {len(pivot_df)}행 x {len(pivot_df.columns)}열 (합계 행 포함)"
             )
+
+            # 디버깅용으로 최종 데이터를 markdown 표로 저장
+            try:
+                # /app 디렉토리가 없는 경우 생성
+                os.makedirs("/app", exist_ok=True)
+
+                # pivot_df를 markdown 형식으로 변환하여 파일 저장
+                # markdown_content = pivot_df.to_markdown()
+                # if markdown_content is not None:
+                #     with open("/app/human_df.md", "w", encoding="utf-8") as f:
+                #         f.write(markdown_content)
+                # logger.info("사람용 비교표 markdown 파일 저장 완료: /app/human_df.md")
+            except Exception as e:
+                logger.error(f"markdown 파일 저장 실패: {e}")
+                raise Exception(f"디버깅용 markdown 파일 저장에 실패했습니다: {e}")
+
             return result
 
         except Exception as e:
             logger.error(f"사람용 비교표 생성 실패: {e}")
-            return {}
+            return pd.DataFrame().to_json(orient="table")
 
     def _create_llm_readable_data(self, df: pd.DataFrame) -> Dict[str, Any]:
         """
@@ -552,10 +584,10 @@ class DatabaseManager:
                         "guide_contract_amount_max": row["guide_contract_amount_max"],
                         "sum_premium": row["sum_premium"],
                         "guide_premium_list": row["guide_premium_list"],
-                        "insur_item_name_list": row["insur_item_name_list"],
-                        "insur_item_name_coverage_list": row[
-                            "insur_item_name_coverage_list"
-                        ],
+                        # "insur_item_name_list": row["insur_item_name_list"],
+                        # "insur_item_name_coverage_list": row[
+                        #     "insur_item_name_coverage_list"
+                        # ],
                     }
                     coverages.append(coverage)
 

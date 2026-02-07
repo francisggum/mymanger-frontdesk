@@ -9,9 +9,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ENVIRONMENT=${ENVIRONMENT:-development}
       - DEBUG_MODE=${DEBUG_MODE:-false}
-      - PANDAS_ANALYSIS_STAGES=${PANDAS_ANALYSIS_STAGES:-2}
       # MSSQL Database Configuration
-      - DB_SERVER=${DB_SERVER:-localhost}
+      - DB_HOST=${DB_HOST:-localhost}
       - DB_NAME=${DB_NAME:-mmapi}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}

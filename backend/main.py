@@ -47,6 +47,8 @@ class LoadDataRequest(BaseModel):
 class ChatRequest(BaseModel):
     query: str
     llm_data: Optional[Dict[str, Any]] = None
+    human_data: Optional[str] = None  # JSON 문자열 (orient='table' 형식)
+    model: Optional[str] = None  # "gemini" 또는 "openai", None이면 기본값 사용
 
 
 class PlanInfo(BaseModel):
@@ -87,20 +89,11 @@ async def fetch_plans():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
-
-
-
-
-
-
-
-
 @app.post("/get-comparison-tables")
 async def get_comparison_tables(request: LoadDataRequest):
     """
     보험료 비교표 생성 API
-    
+
     사람이 읽기 편한 비교표와 LLM이 읽기 편한 비교표를 반환
     """
     try:
@@ -108,20 +101,22 @@ async def get_comparison_tables(request: LoadDataRequest):
         comparison_data = db_manager.process_premium_data_for_comparison(
             request.plan_id, request.gender, request.age
         )
-        
 
-        
         # 로깅
         logger.info(f"=== 비교표 생성 결과 ===")
-        logger.info(f"플랜 ID: {request.plan_id}, 성별: {request.gender}, 나이: {request.age}")
+        logger.info(
+            f"플랜 ID: {request.plan_id}, 성별: {request.gender}, 나이: {request.age}"
+        )
         logger.info(f"총 회사 수: {comparison_data['summary']['total_companies']}")
         logger.info(f"총 보장 수: {comparison_data['summary']['total_coverages']}")
-        logger.info(f"사람용 테이블 크기: {len(comparison_data['human_readable_table'])}")
+        logger.info(
+            f"사람용 테이블 크기: {len(comparison_data['human_readable_table'])}"
+        )
         logger.info(f"LLM용 데이터 크기: {len(comparison_data['llm_readable_data'])}")
         logger.info("=== 비교표 생성 끝 ===")
-        
+
         return comparison_data
-        
+
     except Exception as e:
         logger.error(f"비교표 생성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -151,22 +146,32 @@ async def chat_stream(request: ChatRequest):
 
             # RAG 시스템 스트리밍 실행
             logger.info("[BACKEND] RAG 시스템 스트리밍 호출 시작")
+
+            # human_data가 JSON 문자열인 경우 파싱
+            human_data_parsed = None
+            if request.human_data:
+                try:
+                    human_data_parsed = json.loads(request.human_data)
+                    logger.info("[BACKEND] human_data JSON 파싱 완료")
+                except json.JSONDecodeError as e:
+                    logger.error(f"[BACKEND] human_data JSON 파싱 오류: {e}")
+                    human_data_parsed = {}
+
             chunk_count = 0
             async for chunk in rag_system.hybrid_chat_stream_with_data(
-                request.query, request.llm_data
+                request.query, request.llm_data, human_data_parsed, request.model
             ):
                 chunk_count += 1
                 try:
                     # JSON 직렬화 가능한지 확인하고 변환
                     safe_chunk = _clean_for_json_serialization(chunk)
                     chunk_json = json.dumps(safe_chunk, ensure_ascii=False)
-                    logger.info(f"[BACKEND] 청크 {chunk_count} 직렬화 완료: {len(chunk_json)}바이트")
-                    
+
                     # SSE 형식으로 전송
                     sse_data = f"data: {chunk_json}\n\n"
-                    logger.info(f"[BACKEND] 청크 {chunk_count} 전송: {safe_chunk.get('status', 'unknown')}, {safe_chunk.get('message', '')}")
+
                     yield sse_data
-                    
+
                 except (TypeError, ValueError) as e:
                     logger.error(f"[BACKEND] JSON 직렬화 오류: {e}, chunk: {chunk}")
                     error_chunk = {
