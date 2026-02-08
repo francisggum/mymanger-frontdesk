@@ -427,6 +427,9 @@ class HybridRAGSystem:
         llm_data: Dict[str, Any],
         human_data: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
+        plan_name: Optional[str] = None,
+        gender: Optional[str] = None,
+        age: Optional[int] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         단순화된 스트리밍 질의응답 - LLM 직접 호출 방식
@@ -436,6 +439,9 @@ class HybridRAGSystem:
             llm_data: LLM 데이터
             human_data: Human 데이터 (선택사항)
             model: 사용할 LLM 모델 ("gemini" 또는 "openai"), None이면 기본값 사용
+            plan_name: 플랜명
+            gender: 성별 (남성/여성)
+            age: 나이
         """
         start_time = time.time()
         logger.info(f"Hybrid Chat Stream with Data 시작 - 쿼리: '{query}'")
@@ -470,8 +476,12 @@ class HybridRAGSystem:
 
             # 3. 시스템 프롬프트 구성
             system_prompt = f"""
-너는 보험 비교 전문가야. 아래 제공된 표는 각 보험사별 담보명과 보험료(가입금액) 데이터야. 
+#### 개요 ####
+너는 보험 비교 전문가야. 아래 제공된 표는 각 보험사별 답볍명과 보험료(가입금액) 데이터야. 
 괄호 안의 숫자는 세부 산출 내역이니, 최종 보험료를 비교할 때는 괄호 밖의 숫자를 우선적으로 확인해줘.
+제공된 보험료 비교표는 플랜명이 "{plan_name or '미지정'}"이고 성별은 "{gender or '미지정'}", 나이는 "{age or '미지정'}"세 기준으로 작성되어 있어
+다른 나이, 다른 성별, 다른 플랜에 대한 정보는 제공된 데이터에 포함되어 있지 않아 답변할 수 없어.
+사용자의 질문에 대해서는 본 데이터를 참고해서 가장 적합한 답변을 제공하고 제공된 데이터에 없는 내용은 모른다고 솔직하게 답변해줘.
 
 #### 각 보험사별 보험료 비교표 ####
 {markdown_table}

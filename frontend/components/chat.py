@@ -122,6 +122,14 @@ def handle_chat_input():
                 args=("보험료가 가장 저렴한 회사는?",),
                 use_container_width=True,
             )
+            st.button(
+                f"🚀 삼겹살 맛있게 굽는 법 알려줘.",
+                help="개발용 기본 질문 사용",
+                on_click=set_prompt_callback,
+                args=("삼겹살 맛있게 굽는 법 알려줘.",),
+                use_container_width=True,
+            )
+
         with cols[1]:
             st.caption("💡 개발 모드: 빠른 테스트용 버튼")
 
@@ -171,9 +179,15 @@ def process_chat_message(prompt: str):
                     completion_tokens = usage_info.get("completion_tokens", 0)
                     cost = usage_info.get("cost", 0)
 
+                    # 비용 표시 형식 결정 (숫자 vs 문자열)
+                    if isinstance(cost, (int, float)):
+                        cost_display = f"${cost:.6f}"
+                    else:
+                        cost_display = str(cost)
+
                     # 작은 글씨로 사용량 표시
                     st.caption(
-                        f"💰 토큰: {total_tokens:,}개 (입력: {prompt_tokens:,} / 출력: {completion_tokens:,}) | 비용: ${cost:.6f}"
+                        f"💰 토큰: {total_tokens:,}개 (입력: {prompt_tokens:,} / 출력: {completion_tokens:,}) | 비용: {cost_display}"
                     )
 
                 messages.append({"role": "assistant", "content": full_response})
@@ -188,8 +202,15 @@ def stream_chat(prompt: str) -> tuple:
     try:
         llm_data = get_session_value("llm_readable_data", {})
         human_data = get_session_value("human_readable_table", "")
+        selected_model = get_session_value("selected_model", "openai")
+        
+        # 사용자 컨텍스트 정보 가져오기
+        plan_name = get_session_value("current_plan", "")
+        gender = get_session_value("current_gender", "")
+        age = get_session_value("current_age", 0)
 
-        response = stream_chat_response(prompt, llm_data, human_data)
+        response = stream_chat_response(prompt, llm_data, human_data, selected_model,
+                                        plan_name, gender, age)
 
         full_response = ""
         status_placeholder = st.empty()

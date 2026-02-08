@@ -25,6 +25,13 @@ PAGE_CONFIG = {
 API_TIMEOUT = 120  # seconds
 CHAT_TIMEOUT = 180  # seconds
 
+# AI 모델 설정
+# UI 표시명: 실제 API에 전달할 값
+MODEL_OPTIONS = {
+    "Grok 4.1 Fast": "openai",  # UI에서는 Grok로 표시, 실제로는 openai로 전송
+    "Gemini": "gemini",
+}
+
 # 세션 상태 기본값
 SESSION_DEFAULTS = {
     "messages": [],
@@ -33,9 +40,12 @@ SESSION_DEFAULTS = {
     "selected_plan_key": None,
     "data_loaded": False,
     "current_plan": None,
+    "current_gender": None,
+    "current_age": None,
     "plan_data": None,
     "human_readable_table": None,
     "llm_readable_data": None,
     "comparison_summary": None,
     "temp_prompt": None,  # 개발 모드 버튼용 임시 프롬프트
+    "selected_model": "openai",  # 기본값: openai (UI에서는 Grok 4.1 Fast로 표시)
 }

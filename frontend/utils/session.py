@@ -27,6 +27,8 @@ def reset_analysis_data():
     keys_to_reset = [
         "data_loaded",
         "current_plan",
+        "current_gender",
+        "current_age",
         "plan_data",
         "human_readable_table",
         "llm_readable_data",

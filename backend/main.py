@@ -49,6 +49,9 @@ class ChatRequest(BaseModel):
     llm_data: Optional[Dict[str, Any]] = None
     human_data: Optional[str] = None  # JSON 문자열 (orient='table' 형식)
     model: Optional[str] = None  # "gemini" 또는 "openai", None이면 기본값 사용
+    plan_name: Optional[str] = None  # 플랜명
+    gender: Optional[str] = None  # 성별 (남성/여성)
+    age: Optional[int] = None  # 나이
 
 
 class PlanInfo(BaseModel):
@@ -159,7 +162,8 @@ async def chat_stream(request: ChatRequest):
 
             chunk_count = 0
             async for chunk in rag_system.hybrid_chat_stream_with_data(
-                request.query, request.llm_data, human_data_parsed, request.model
+                request.query, request.llm_data, human_data_parsed, request.model,
+                request.plan_name, request.gender, request.age
             ):
                 chunk_count += 1
                 try:

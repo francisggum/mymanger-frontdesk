@@ -10,12 +10,17 @@ from utils.session import (
     get_selected_plan,
 )
 from utils.api import fetch_plans, get_comparison_tables, check_backend_connection
-from config import IS_DEVELOPMENT
+from config import IS_DEVELOPMENT, MODEL_OPTIONS
 
 
 def render_sidebar():
     """사이드바 전체 렌더링"""
     st.sidebar.title("보험 비교 AI 설정")
+    st.sidebar.markdown("---")
+
+    # AI 모델 선택
+    render_model_selector()
+
     st.sidebar.markdown("---")
 
     # 백엔드 연결 상태
@@ -31,6 +36,41 @@ def render_sidebar():
         render_plan_selector()
         render_plan_info()
         render_analysis_form()
+
+
+def render_model_selector():
+    """AI 모델 선택 스위치"""
+    st.sidebar.subheader("🤖 AI 모델 선택")
+
+    # 현재 선택된 모델 값 가져오기
+    current_model = get_session_value("selected_model", "openai")
+
+    # UI 표시명 찾기
+    ui_options = list(MODEL_OPTIONS.keys())
+    current_ui_label = None
+    for label, value in MODEL_OPTIONS.items():
+        if value == current_model:
+            current_ui_label = label
+            break
+
+    if not current_ui_label:
+        current_ui_label = ui_options[0]
+
+    # 모델 선택 라디오 버튼
+    selected_ui_label = st.sidebar.radio(
+        "사용할 AI 모델",
+        options=ui_options,
+        index=ui_options.index(current_ui_label),
+        help="질의응답에 사용할 AI 모델을 선택하세요",
+        label_visibility="collapsed",
+    )
+
+    # 선택된 UI 레이블을 실제 모델 값으로 변환하여 저장
+    selected_model_value = MODEL_OPTIONS[selected_ui_label]
+    set_session_value("selected_model", selected_model_value)
+
+    # 현재 선택된 모델 표시
+    st.sidebar.caption(f"선택된 모델: **{selected_ui_label}**")
 
 
 def render_connection_status():
@@ -199,6 +239,8 @@ def render_analysis_form():
                         "current_plan",
                         f"{plan['plan_type_name']} ({plan['insu_compy_type_name']})",
                     )
+                    set_session_value("current_gender", gender)  # 한글 성별 저장
+                    set_session_value("current_age", age)  # 나이 저장
                     set_session_value("plan_data", response)
                     set_session_value(
                         "human_readable_table", response.get("human_readable_table")

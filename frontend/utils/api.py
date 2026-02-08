@@ -58,7 +58,8 @@ def get_comparison_tables(plan_id: str, age: int, gender: str):
     return call_api("/get-comparison-tables", data, method="POST")
 
 
-def stream_chat_response(query: str, llm_data: dict, human_data: str):
+def stream_chat_response(query: str, llm_data: dict, human_data: str, model: str = "openai",
+                         plan_name: str = None, gender: str = None, age: int = None):
     """채팅 스트리밍 응답 요청"""
     url = f"{BACKEND_URL}/chat-stream"
 
@@ -68,6 +69,10 @@ def stream_chat_response(query: str, llm_data: dict, human_data: str):
             "query": query,
             "llm_data": llm_data,
             "human_data": human_data,
+            "model": model,
+            "plan_name": plan_name,
+            "gender": gender,
+            "age": age,
         },
         stream=True,
         timeout=CHAT_TIMEOUT,
