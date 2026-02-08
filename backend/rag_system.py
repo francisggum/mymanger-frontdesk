@@ -446,6 +446,8 @@ class HybridRAGSystem:
         start_time = time.time()
         logger.info(f"Hybrid Chat Stream with Data 시작 - 쿼리: '{query}'")
 
+        logger.info(f"LLM 데이터 샘플 100자: {str(llm_data)[:100] if llm_data else 0}")
+
         try:
             # 1. 데이터 처리 상태 전송
             yield {

@@ -180,8 +180,8 @@ class DatabaseManager:
             end as guide_premium,
             (select top 1 CD_NM from mmapi.dbo.TB_COMM_CD 
              where CD_ID = a.compy_cd and UPP_CD_ID = 'COMPY') as company_name,
-            (select top 1 coverage_name from TB_MMLFCP_COVERAGE 
-             where coverage_cd = e.coverage_cd) as coverage_name
+            ISNULL((select top 1 coverage_name from TB_MMLFCP_COVERAGE 
+            where coverage_cd = e.coverage_cd), '최저기본계약조건') as coverage_name
         from
             mmapi.dbo.TB_TIC_PRDT_PRICE a
         join TB_MMLFCP_PLAN_PRODUCT b
@@ -497,7 +497,7 @@ class DatabaseManager:
 
             # 보험사별 총 보험료 합계 계산
             company_totals = df.groupby("column_name")["sum_premium"].sum()
-            
+
             # 합계 행 생성 (맨 위에 추가할 행)
             total_row = {}
             for col in pivot_df.columns:
@@ -506,10 +506,10 @@ class DatabaseManager:
                     total_row[col] = f"{self._safe_float_format(total_value, '', '')}"
                 else:
                     total_row[col] = ""
-            
+
             # 합계 행을 DataFrame으로 변환하고 기존 피벗 테이블과 결합
             total_df = pd.DataFrame([total_row], index=["**보험사별 총 보험료 합계**"])
-            
+
             # 합계 행을 맨 위에 추가
             pivot_df = pd.concat([total_df, pivot_df])
 
@@ -578,22 +578,61 @@ class DatabaseManager:
                 # 보장 항목 리스트 생성
                 coverages = []
                 for _, row in group.iterrows():
+                    # insur_item_list 생성 - 세 가지 리스트를 파싱하여 객체 배열로 변환
+                    insur_item_list = []
+
+                    # "|"로 구분된 리스트 파싱
+                    names = (
+                        row["insur_item_name_list"].split("|")
+                        if row["insur_item_name_list"]
+                        else []
+                    )
+                    coverages_list = (
+                        row["insur_item_name_coverage_list"].split("|")
+                        if row["insur_item_name_coverage_list"]
+                        else []
+                    )
+
+                    # "+"로 구분된 프리미엄 리스트 파싱
+                    premiums = (
+                        row["guide_premium_list"].split("+")
+                        if row["guide_premium_list"]
+                        else []
+                    )
+
+                    # 세 리스트를 zip하여 객체 배열 생성 (길이가 다른 경우 가장 짧은 것에 맞춤)
+                    for i in range(min(len(names), len(coverages_list), len(premiums))):
+                        insur_item_list.append(
+                            {
+                                "name": names[i].strip(),
+                                "coverage": coverages_list[i].strip(),
+                                "premium": premiums[i].strip(),
+                            }
+                        )
+
                     coverage = {
                         "coverage_name": row["coverage_name"],
                         "coverage_code": row["coverage_cd"],
                         "guide_contract_amount_max": row["guide_contract_amount_max"],
                         "sum_premium": row["sum_premium"],
-                        "guide_premium_list": row["guide_premium_list"],
-                        # "insur_item_name_list": row["insur_item_name_list"],
-                        # "insur_item_name_coverage_list": row[
-                        #     "insur_item_name_coverage_list"
-                        # ],
+                        "insur_item_list": insur_item_list,
                     }
                     coverages.append(coverage)
 
                 result[company_key] = coverages
 
             logger.info(f"LLM용 데이터 생성 완료: {len(result)}개 회사")
+
+            # 디버그용: result를 JSON 파일로 저장
+            # try:
+            #     import json
+            #     os.makedirs("/app", exist_ok=True)
+            #     with open("/app/result.json", "w", encoding="utf-8") as f:
+            #         json.dump(result, f, ensure_ascii=False, indent=2)
+            #     logger.info("디버그용 결과 파일 저장 완료: /app/result.json")
+            # except Exception as e:
+            #     logger.error(f"디버그용 결과 파일 저장 실패: {e}")
+
             return result
 
         except Exception as e:
