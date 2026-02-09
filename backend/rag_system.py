@@ -9,7 +9,19 @@ import logging
 import os
 import time
 import asyncio
+import json
 from dotenv import load_dotenv
+
+# LLM Tools import
+from llm_tools import (
+    OPENAI_TOOLS,
+    GEMINI_TOOLS,
+    TOOL_FUNCTIONS,
+    execute_tool,
+    search_by_company_name,
+    search_by_coverage_name,
+    compare_companies_by_coverage,
+)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -242,34 +254,253 @@ class HybridRAGSystem:
             return f"데이터 변환 중 오류가 발생했습니다: {str(e)}"
 
     async def _stream_llm_response(
-        self, prompt: str, model: str
+        self, prompt: str, model: str, llm_data: Dict[str, Any], query: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        LLM을 통한 스트리밍 응답 생성 (모델 선택 기능)
+        LLM을 통한 스트리밍 응답 생성 (Tool Calling 통합)
 
         Args:
             prompt: LLM에 전달할 프롬프트
             model: 사용할 모델 ("gemini" 또는 "openai")
+            llm_data: 보험 데이터
+            query: 사용자 질문
 
         Yields:
             스트리밍 응답 청크
         """
         try:
-            # 상태 청크 전송
             yield {
-                "status": "llm_generating",
-                "message": "AI 답변 생성 중...",
-                "progress": 85,
+                "status": "analyzing",
+                "message": "질문 분석 중...",
+                "progress": 20,
                 "timestamp": time.time(),
             }
 
             response_text = ""
-            chunk_count = 0
+            tool_calls = []
             usage_metadata = None
 
-            if model == "gemini":
-                # Google AI 스트리밍 호출
+            if model == "openai":
+                # OpenAI Tool Calling
+                if openai_client:
+                    messages = [
+                        {
+                            "role": "system",
+                            "content": "당신은 보험 비교 전문가입니다. 제공된 도구들을 사용하여 사용자의 질문에 답변하세요.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ]
+
+                    # 첫 번째 호출: 도구 선택
+                    response = await openai_client.chat.completions.create(
+                        model="x-ai/grok-4.1-fast",
+                        messages=messages,
+                        tools=OPENAI_TOOLS,
+                        tool_choice="auto",
+                    )
+
+                    message = response.choices[0].message
+
+                    # 도구 호출이 있는 경우
+                    if message.tool_calls:
+                        logger.info(
+                            f"OpenAI 도구 호출 감지: {len(message.tool_calls)}개"
+                        )
+
+                        # 프론트엔드에 도구 사용 상태 전송
+                        yield {
+                            "status": "searching",
+                            "message": "보험 비교표외에 추가적인 세부 보장 정보 조회중...",
+                            "progress": 65,
+                            "timestamp": time.time(),
+                        }
+
+                        for tool_call in message.tool_calls:
+                            function_name = tool_call.function.name
+                            function_args = json.loads(tool_call.function.arguments)
+
+                            logger.info(
+                                f"도구 실행: {function_name}, 파라미터: {function_args}"
+                            )
+
+                            # 도구 실행
+                            result = execute_tool(
+                                llm_data, function_name, function_args
+                            )
+                            tool_calls.append(
+                                {
+                                    "tool": function_name,
+                                    "args": function_args,
+                                    "result": result,
+                                }
+                            )
+
+                        # 도구 결과를 포함하여 최종 응답 생성
+                        tool_results_text = "\n\n[도구 검색 결과]\n"
+                        for tc in tool_calls:
+                            tool_results_text += f"\n{tc['tool']}({tc['args']}):\n{json.dumps(tc['result'], ensure_ascii=False, indent=2)}\n"
+
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": tc.get("id", "call_1"),
+                                        "type": "function",
+                                        "function": {
+                                            "name": tc["tool"],
+                                            "arguments": json.dumps(tc["args"]),
+                                        },
+                                    }
+                                    for tc in tool_calls
+                                ],
+                            }
+                        )
+
+                        for tc in tool_calls:
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tc.get("id", "call_1"),
+                                    "content": json.dumps(
+                                        tc["result"], ensure_ascii=False
+                                    ),
+                                }
+                            )
+
+                        # 최종 응답 스트리밍
+                        yield {
+                            "status": "generating",
+                            "message": "답변 생성 중...",
+                            "progress": 80,
+                            "timestamp": time.time(),
+                        }
+
+                        final_response = await openai_client.chat.completions.create(
+                            model="x-ai/grok-4.1-fast",
+                            messages=messages,
+                            stream=True,
+                        )
+
+                        async for chunk in final_response:
+                            if chunk.choices[0].delta.content:
+                                response_text += chunk.choices[0].delta.content
+                                yield {
+                                    "status": "streaming",
+                                    "message": "답변 생성 중...",
+                                    "progress": 90,
+                                    "chunk": chunk.choices[0].delta.content,
+                                    "partial_response": response_text,
+                                    "timestamp": time.time(),
+                                }
+
+                            # 사용량 정보 추출
+                            if hasattr(chunk, "usage") and chunk.usage:
+                                usage_metadata = chunk.usage
+                    else:
+                        # 도구 호출 없음 - 바로 응답
+                        response_text = message.content or ""
+                        yield {
+                            "status": "streaming",
+                            "message": "답변 생성 중...",
+                            "progress": 90,
+                            "chunk": response_text,
+                            "partial_response": response_text,
+                            "timestamp": time.time(),
+                        }
+
+                else:
+                    yield {
+                        "status": "error",
+                        "message": "OpenAI client가 초기화되지 않았습니다.",
+                        "progress": 0,
+                        "timestamp": time.time(),
+                    }
+                    return
+
+            elif model == "gemini":
+                # Gemini Tool Calling (수동 방식)
                 if client:
+                    tool_selection_prompt = f"""
+사용자 질문: {query}
+
+사용 가능한 도구들:
+1. search_by_company_name - 회사명으로 검색 (예: "DB", "삼성")
+2. search_by_coverage_name - 보장 항목으로 검색 (예: "암진단", "상해")
+3. compare_companies_by_coverage - 특정 보장으로 회사 비교 (예: "통합암진단비")
+4. get_cheapest_company - 가장 저렴한 회사 찾기
+5. get_company_summary - 회사 전체 정보
+
+이 질문에 어떤 도구를 사용해야 하나요? JSON 형식으로 답변하세요:
+{{"tool": "도구명", "parameters": {{"파라미터명": "값"}}}}
+
+또는 도구가 필요 없으면: {{"tool": null}}
+"""
+
+                    selection_response = client.models.generate_content(
+                        model="gemini-3-flash-preview", contents=[tool_selection_prompt]
+                    )
+
+                    try:
+                        selection_text = selection_response.text.strip()
+                        if "```json" in selection_text:
+                            selection_text = (
+                                selection_text.split("```json")[1]
+                                .split("```")[0]
+                                .strip()
+                            )
+                        elif "```" in selection_text:
+                            selection_text = (
+                                selection_text.split("```")[1].split("```")[0].strip()
+                            )
+
+                        selection = json.loads(selection_text)
+                        selected_tool = selection.get("tool")
+                        parameters = selection.get("parameters", {})
+
+                        if selected_tool and selected_tool in TOOL_FUNCTIONS:
+                            logger.info(
+                                f"Gemini 도구 선택: {selected_tool}, 파라미터: {parameters}"
+                            )
+
+                            yield {
+                                "status": "searching",
+                                "message": "보험 비교표외에 추가적인 세부 보장 정보 조회중...",
+                                "progress": 65,
+                                "timestamp": time.time(),
+                            }
+
+                            result = execute_tool(llm_data, selected_tool, parameters)
+                            tool_calls.append(
+                                {
+                                    "tool": selected_tool,
+                                    "args": parameters,
+                                    "result": result,
+                                }
+                            )
+
+                            tool_result_prompt = f"""
+{prompt}
+
+[도구 검색 결과]
+도구: {selected_tool}
+파라미터: {json.dumps(parameters, ensure_ascii=False)}
+결과: {json.dumps(result, ensure_ascii=False, indent=2)}
+
+위 결과를 바탕으로 사용자 질문에 답변해주세요.
+"""
+                            prompt = tool_result_prompt
+                    except Exception as e:
+                        logger.warning(f"Gemini 도구 선택 파싱 실패: {e}")
+
+                    yield {
+                        "status": "generating",
+                        "message": "답변 생성 중...",
+                        "progress": 80,
+                        "timestamp": time.time(),
+                    }
+
                     response = client.models.generate_content_stream(
                         model="gemini-3-flash-preview", contents=[prompt]
                     )
@@ -277,69 +508,21 @@ class HybridRAGSystem:
                     for chunk in response:
                         if chunk.text:
                             response_text += chunk.text
-                            chunk_count += 1
-
                             yield {
-                                "status": "llm_streaming",
-                                "message": "AI 답변 생성 중...",
+                                "status": "streaming",
+                                "message": "답변 생성 중...",
                                 "progress": 90,
                                 "chunk": chunk.text,
                                 "partial_response": response_text,
                                 "timestamp": time.time(),
                             }
 
-                        # Gemini: 마지막 청크에서 사용량 정보 추출
                         if hasattr(chunk, "usage_metadata") and chunk.usage_metadata:
                             usage_metadata = chunk.usage_metadata
                 else:
                     yield {
                         "status": "error",
                         "message": "Google AI client가 초기화되지 않았습니다.",
-                        "progress": 0,
-                        "timestamp": time.time(),
-                    }
-                    return
-
-            elif model == "openai":
-                # OpenAI 스트리밍 호출
-                if openai_client:
-                    response = await openai_client.chat.completions.create(
-                        # model="deepseek/deepseek-v3.2",
-                        model="x-ai/grok-4.1-fast",
-                        messages=[{"role": "user", "content": prompt}],
-                        stream=True,
-                        # extra_body={
-                        #     "reasoning": {
-                        #         "effect": "hight",
-                        #         "exclude": False,
-                        #         "enabled": True,
-                        #     }
-                        # },
-                    )
-
-                    # OpenAI 스트리밍은 async for 사용
-                    async for chunk in response:
-                        if chunk.choices[0].delta.content:
-                            chunk_text = chunk.choices[0].delta.content
-                            response_text += chunk_text
-                            chunk_count += 1
-
-                            yield {
-                                "status": "llm_streaming",
-                                "message": "AI 답변 생성 중...",
-                                "progress": 90,
-                                "chunk": chunk_text,
-                                "partial_response": response_text,
-                                "timestamp": time.time(),
-                            }
-
-                        # OpenAI: 사용량 정보 추출 (마지막 청크)
-                        if hasattr(chunk, "usage") and chunk.usage:
-                            usage_metadata = chunk.usage
-                else:
-                    yield {
-                        "status": "error",
-                        "message": "OpenAI client가 초기화되지 않았습니다.",
                         "progress": 0,
                         "timestamp": time.time(),
                     }
@@ -485,6 +668,12 @@ class HybridRAGSystem:
 다른 나이, 다른 성별, 다른 플랜에 대한 정보는 제공된 데이터에 포함되어 있지 않아 답변할 수 없어.
 사용자의 질문에 대해서는 본 데이터를 참고해서 가장 적합한 답변을 제공하고 제공된 데이터에 없는 내용은 모른다고 솔직하게 답변해줘.
 
+사용 가능한 도구들:
+- search_by_company_name: 회사명으로 검색
+- search_by_coverage_name: 보장 항목으로 검색  
+- compare_companies_by_coverage: 특정 보장 항목으로 회사들 비교
+- get_cheapest_company: 특정 보장에서 가장 저렴한 회사 찾기
+
 #### 각 보험사별 보험료 비교표 ####
 {markdown_table}
 
@@ -496,12 +685,18 @@ class HybridRAGSystem:
             #     with open("/app/prompt.txt", "w", encoding="utf-8") as f:
             #         f.write(system_prompt)
 
-            # 4. LLM 스트리밍 응답 생성
+            # 4. LLM 스트리밍 응답 생성 (Tool Calling 통합)
             # 모델 선택: 파라미터가 있으면 사용, 없으면 기본값(self._human_data_llm) 사용
             selected_model = model if model else self._human_data_llm
             logger.info(f"선택된 LLM 모델: {selected_model}")
 
-            async for chunk in self._stream_llm_response(system_prompt, selected_model):
+            # llm_data를 포함하여 Tool Calling으로 실행
+            logger.info(
+                f"Tool Calling 모드로 실행 - llm_data 키 수: {len(llm_data) if llm_data else 0}"
+            )
+            async for chunk in self._stream_llm_response(
+                system_prompt, selected_model, llm_data, query
+            ):
                 chunk["processing_time"] = time.time() - start_time
                 yield chunk
 
