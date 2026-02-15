@@ -176,7 +176,7 @@ class DatabaseManager:
             e.guide_contract_amount as guide_contract_amount,
             case
                 when a.std_contract_amt <= 0 then 0
-                else (e.guide_contract_amount * a.premium) / a.std_contract_amt
+                else CAST((e.guide_contract_amount * a.premium) / a.std_contract_amt AS INT)
             end as guide_premium,
             (select top 1 CD_NM from mmapi.dbo.TB_COMM_CD 
              where CD_ID = a.compy_cd and UPP_CD_ID = 'COMPY') as company_name,
