@@ -89,14 +89,16 @@ def render_plan_selector():
     plans = get_session_value("plans", [])
 
     plan_options = {
-        f"{plan['plan_type_name']} ({plan['insu_compy_type_name']})": plan
+        f"{plan['plan_type_name']} ({plan['payment_due_type_name']})": plan
         for plan in plans
     }
 
     selected_key = get_session_value("selected_plan_key")
     if not selected_key or selected_key not in plan_options:
+        # 기존 세션 키가 새 형식과 다륾면 초기화
         selected_key = list(plan_options.keys())[0]
         set_session_value("selected_plan_key", selected_key)
+        set_session_value("data_loaded", False)  # 기존 분석 데이터도 초기화
 
     selected = st.sidebar.selectbox(
         "플랜 선택",
@@ -116,10 +118,10 @@ def render_plan_info():
     st.sidebar.markdown("---")
     st.sidebar.subheader("📋 플랜 정보")
 
-    min_m_age = plan.get("plan_min_m_age", 0)
-    max_m_age = plan.get("plan_max_m_age", 0)
-    min_f_age = plan.get("plan_min_f_age", 0)
-    max_f_age = plan.get("plan_max_f_age", 0)
+    min_m_age = plan.get("min_m_age", 0)
+    max_m_age = plan.get("max_m_age", 0)
+    min_f_age = plan.get("min_f_age", 0)
+    max_f_age = plan.get("max_f_age", 0)
 
     if min_m_age == 0 and max_m_age == 0:
         st.sidebar.info("👩 이 플랜은 **여성** 전용입니다")
@@ -148,10 +150,10 @@ def render_analysis_form():
     st.sidebar.markdown("---")
     st.sidebar.subheader("🔧 가입 조건 입력")
 
-    min_m_age = plan.get("plan_min_m_age", 0)
-    max_m_age = plan.get("plan_max_m_age", 0)
-    min_f_age = plan.get("plan_min_f_age", 0)
-    max_f_age = plan.get("plan_max_f_age", 0)
+    min_m_age = plan.get("min_m_age", 0)
+    max_m_age = plan.get("max_m_age", 0)
+    min_f_age = plan.get("min_f_age", 0)
+    max_f_age = plan.get("max_f_age", 0)
 
     if min_m_age == 0 and max_m_age == 0:
         gender_options = ["여성"]
@@ -209,7 +211,7 @@ def render_analysis_form():
                     set_session_value("data_loaded", True)
                     set_session_value(
                         "current_plan",
-                        f"{plan['plan_type_name']} ({plan['insu_compy_type_name']})",
+                        f"{plan['plan_type_name']} ({plan['payment_due_type_name']})",
                     )
                     set_session_value("current_gender", gender)
                     set_session_value("current_age", age)

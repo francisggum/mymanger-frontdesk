@@ -110,7 +110,6 @@ class DatabaseManager:
             a.refund_payment_type,
             a.simplified_underwriting_yn,
             a.renewal_yn,
-            a.renewal_yn,
             a.notice_type,
             plan_payterm_type as payment_due_type,
             c.cd_nm as payment_due_type_name,
