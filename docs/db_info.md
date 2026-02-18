@@ -43,7 +43,42 @@
 |:-------------- |:-------- |:------------------------------------ |
 | **TB_COMM_CD** | 공통 코드 관리 | `CD_ID`, `CD_NM`, `UPP_CD_ID` (그룹코드) |
 
- ---
+### 2.4. API 로그 테이블
+
+| 테이블명                  | 설명           | 주요 컬럼                                          |
+|:--------------------- |:------------ |:---------------------------------------------- |
+| **tb_mmapi_accesslog**  | API 접근 로그    | `ga_id`, `ap_name`, `api_name`, `in_date`      |
+| **tb_mmapi_gen_jwt_log** | JWT 생성 로그    | `ga_id`, `in_date`                              |
+
+### 2.5. 시노님(Synonym)을 통한 외부 테이블 참조
+
+다음 테이블들은 시노님을 통해 외부 데이터베이스의 테이블을 참조합니다.
+
+#### 2.5.1. GA/공통 정보 (common DB)
+
+| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
+|:-------- |:-------- |:---- |:-------- |
+| **TB_GA_INFO** | common..TB_GA_INFO | GA(General Agency) 정보 | `ga_id`, `ga_name`, `use_yn` 등 |
+
+#### 2.5.2. 생명보험 상품 정보 (mmlicp DB)
+
+| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
+|:-------- |:-------- |:---- |:-------- |
+| **tb_li_prdt** | mmlicp..tb_li_prdt | 생명보험 상품 마스터 | `product_code`, `product_name`, `company_code` 등 |
+| **tb_li_prdt_cntrc_amnt_type** | mmlicp..tb_li_prdt_cntrc_amnt_type | 생명보험 가입금액 타입 | `product_code`, `cntrc_amnt_type`, `use_yn` 등 |
+| **tb_li_prdt_price** | mmlicp..tb_li_prdt_price | 생명보험 상품 보험료 | `product_code`, `gender`, `age`, `premium` 등 |
+| **tb_li_prdt_termination_refund** | mmlicp..tb_li_prdt_termination_refund | 생명보험 해지환급금 | `product_code`, `year`, `refund_amount` 등 |
+| **tb_li_prdt_type_cnt_cnd** | mmlicp..tb_li_prdt_type_cnt_cnd | 생명보험 상품 계약 조건 | `product_code`, `cnt_cnd_type`, `value` 등 |
+| **pro_licp_get_dat** | mmlicp..pro_licp_get_dat | 생명보험 데이터 조회 프로시저 | 입력/출력 파라미터 기반 |
+| **pro_licp_get_data** | mmlicp..pro_licp_get_data | 생명보험 데이터 조회 프로시저(확장) | 입력/출력 파라미터 기반 |
+
+#### 2.5.3. OC 상품 정보 (mmoc DB)
+
+| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
+|:-------- |:-------- |:---- |:-------- |
+| **tb_od_products** | mmoc..tb_od_products | OC(Overseas Care) 상품 정보 | `product_id`, `product_name`, `use_yn` 등 |
+
+---
 
 ## 3. 비즈니스 로직 (Query Logic)
 
@@ -256,6 +291,22 @@ SELECT TOP 5
 
 #### J. TB_COMM_CD (공통 코드)
 
+**컬럼 명세:**
+
+| 컬럼명       | 데이터 타입      | 길이   | NULL 허용 | 설명           |
+|:---------- |:----------- |:----- |:-------- |:------------ |
+| CD_ID      | nvarchar    | 20    | NO       | 코드 ID        |
+| CD_NM      | nvarchar    | 50    | YES      | 코드명          |
+| CD_DESC    | nvarchar    | 100   | YES      | 코드 설명        |
+| UPP_CD_ID  | nvarchar    | 20    | NO       | 상위 코드 ID (그룹코드) |
+| ATTR01     | nvarchar    | 50    | YES      | 속성1           |
+| ATTR02     | nvarchar    | 20    | YES      | 속성2           |
+| ATTR03     | nvarchar    | 20    | YES      | 속성3           |
+| ORDER_SEQ  | int         | -     | YES      | 정렬 순서         |
+| USE_YN     | nvarchar    | 1     | YES      | 사용 여부 (기본값: Y) |
+
+**샘플 데이터:**
+
 | CD_ID    | CD_NM | UPP_CD_ID | ORDER_SEQ |
 | -------- | ----- | --------- | --------- |
 | INS01    | A생명   | COMPY     | 1         |
@@ -263,6 +314,96 @@ SELECT TOP 5
 | TYPE_A   | 종합형   | MMLFCP_A  | 1         |
 | TERM_20Y | 20년납  | MMLFCP_B  | 1         |
 | COMP_L   | 생명보험  | MMLFCP_C  | 1         |
+
+#### M. tb_mmapi_accesslog (API 접근 로그)
+
+**컬럼 명세:**
+
+| 컬럼명     | 데이터 타입      | 길이   | NULL 허용 | 설명              |
+|:-------- |:----------- |:----- |:-------- |:--------------- |
+| ga_id    | nvarchar    | 5     | NO       | GA ID (고객사 ID)  |
+| ap_name  | nvarchar    | 10    | NO       | 애플리케이션 이름      |
+| api_name | nvarchar    | 50    | NO       | API 이름          |
+| in_date  | datetime    | -     | YES      | 접근 일시 (기본값: 현재시간) |
+
+#### N. tb_mmapi_gen_jwt_log (JWT 생성 로그)
+
+**컬럼 명세:**
+
+| 컬럼명     | 데이터 타입      | 길이   | NULL 허용 | 설명              |
+|:-------- |:----------- |:----- |:-------- |:--------------- |
+| ga_id    | nvarchar    | 5     | NO       | GA ID (고객사 ID)  |
+| in_date  | datetime    | -     | YES      | 생성 일시 (기본값: 현재시간) |
+
+#### O. TB_GA_INFO (GA 정보 - common DB 시노님)
+
+**컬럼 명세:**
+
+| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
+|:------ |:----------- |:---- |:--------- |:---- |
+| ga_id | nvarchar | 5 | NO | GA ID (고객사 ID) |
+| ga_name | nvarchar | 100 | YES | GA 이름 |
+| use_yn | nvarchar | 1 | YES | 사용 여부 |
+
+**샘플 데이터:**
+
+| ga_id | ga_name | use_yn |
+| ----- | ------- | ------ |
+| GA001 | A생명 GA | Y |
+| GA002 | B화재 GA | Y |
+
+#### P. tb_li_prdt (생명보험 상품 - mmlicp DB 시노님)
+
+**컬럼 명세:**
+
+| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
+|:------ |:----------- |:---- |:--------- |:---- |
+| product_code | nvarchar | 20 | NO | 상품 코드 |
+| product_name | nvarchar | 200 | YES | 상품명 |
+| company_code | nvarchar | 10 | YES | 보험사 코드 |
+| use_yn | nvarchar | 1 | YES | 사용 여부 |
+
+**샘플 데이터:**
+
+| product_code | product_name | company_code | use_yn |
+| ------------ | ------------ | ------------ | ------ |
+| 12601001 | 든든한 암보험 | DB | Y |
+| 12601002 | 행복한 종신보험 | HA | Y |
+
+#### Q. tb_li_prdt_price (생명보험 상품 보험료 - mmlicp DB 시노님)
+
+**컬럼 명세:**
+
+| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
+|:------ |:----------- |:---- |:--------- |:---- |
+| product_code | nvarchar | 20 | NO | 상품 코드 |
+| gender | nvarchar | 1 | YES | 성별 (M/F) |
+| age | int | - | YES | 나이 |
+| premium | decimal | - | YES | 보험료 |
+
+**샘플 데이터:**
+
+| product_code | gender | age | premium |
+| ------------ | ------ | --- | ------- |
+| 12601001 | M | 40 | 150000 |
+| 12601001 | F | 40 | 120000 |
+
+#### R. tb_od_products (OC 상품 - mmoc DB 시노님)
+
+**컬럼 명세:**
+
+| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
+|:------ |:----------- |:---- |:--------- |:---- |
+| product_id | nvarchar | 20 | NO | 상품 ID |
+| product_name | nvarchar | 200 | YES | 상품명 |
+| use_yn | nvarchar | 1 | YES | 사용 여부 |
+
+**샘플 데이터:**
+
+| product_id | product_name | use_yn |
+| ---------- | ------------ | ------ |
+| OC001 | 해외여행보험 | Y |
+| OC002 | 해외학생보험 | Y |
 
 #### K. TB_MMLFCP_COVERAGE (보장 마스터)
 

@@ -43,7 +43,7 @@ def render_modal_content():
     # DataFrame으로 변환 및 표시
     try:
         df = pd.read_json(StringIO(human_table), orient='table')
-        st.dataframe(df, use_container_width=True, height=600)
+        st.dataframe(df, width='stretch', height=600)
     except Exception as e:
         st.error(f"데이터 표시 오류: {e}")
         return

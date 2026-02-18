@@ -398,13 +398,10 @@ def render_plan_info():
     max_f_age = plan.get("max_f_age", 0)
 
     if min_m_age == 0 and max_m_age == 0:
-        st.sidebar.info("👩 이 플랜은 **여성** 전용입니다")
         st.sidebar.write(f"👤 나이 조건: {min_f_age}세 ~ {max_f_age}세")
     elif min_f_age == 0 and max_f_age == 0:
-        st.sidebar.info("👨 이 플랜은 **남성** 전용입니다")
         st.sidebar.write(f"👤 나이 조건: {min_m_age}세 ~ {max_m_age}세")
     else:
-        st.sidebar.info("👫 이 플랜은 **남녀 공통**입니다")
         male_range = (
             f"남성: {min_m_age}~{max_m_age}세" if min_m_age > 0 else "남성: 불가"
         )
@@ -451,23 +448,31 @@ def render_analysis_form():
             else max(max_m_age, max_f_age)
         )
 
-    gender = st.sidebar.radio(
-        "성별", gender_options, index=gender_options.index(default_gender)
-    )
+    # 성별/나이 좌우 2분할
+    gender_col, age_col = st.sidebar.columns(2)
+
+    with gender_col:
+        gender = st.radio(
+            "성별",
+            gender_options,
+            index=gender_options.index(default_gender),
+            horizontal=True,
+        )
     gender_code = "M" if gender == "남성" else "F"
 
-    if min_age > 0 and max_age > 0:
-        default_age = min((min_age + max_age) // 2, min_age + 1)
-        default_age = max(min_age, min(default_age, max_age))
-        age = st.sidebar.number_input(
-            "나이",
-            min_value=min_age,
-            max_value=max_age,
-            value=default_age,
-            help=f"{min_age}세에서 {max_age}세까지 입력 가능합니다",
-        )
-    else:
-        age = st.sidebar.number_input("나이", min_value=0, max_value=100, value=46)
+    with age_col:
+        if min_age > 0 and max_age > 0:
+            default_age = min((min_age + max_age) // 2, min_age + 1)
+            default_age = max(min_age, min(default_age, max_age))
+            age = st.number_input(
+                "나이",
+                min_value=min_age,
+                max_value=max_age,
+                value=default_age,
+                help=f"{min_age}세에서 {max_age}세까지 입력 가능합니다",
+            )
+        else:
+            age = st.number_input("나이", min_value=0, max_value=100, value=46)
 
     # int 타입으로 변환
     age = int(age)
@@ -516,7 +521,7 @@ def show_tier_settings_dialog():
 
     if df.empty:
         st.error("❌ 보장 티어 데이터를 불러올 수 없습니다.")
-        if st.button("닫기", use_container_width=True):
+        if st.button("닫기", width="stretch"):
             st.rerun()
         return
 
@@ -542,7 +547,7 @@ def show_tier_settings_dialog():
             "실손보험": st.column_config.CheckboxColumn("실손보험"),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         num_rows="fixed",  # 행 추가/삭제 불가
         height=500,
     )
@@ -554,7 +559,7 @@ def show_tier_settings_dialog():
 
     with col1:
         # 저장 버튼
-        if st.button("💾 저장", type="primary", use_container_width=True):
+        if st.button("💾 저장", type="primary", width="stretch"):
             if save_coverage_tiers(edited_df):
                 st.success("✅ 설정이 저장되었습니다!")
                 st.rerun()
@@ -563,7 +568,7 @@ def show_tier_settings_dialog():
 
     with col2:
         # 닫기 버튼
-        if st.button("닫기", use_container_width=True):
+        if st.button("닫기", width="stretch"):
             st.rerun()
 
 
@@ -575,7 +580,7 @@ def show_plan_category_dialog():
 
     if df.empty:
         st.error("❌ 종목별 플랜 매핑 데이터를 불러올 수 없습니다.")
-        if st.button("닫기", use_container_width=True):
+        if st.button("닫기", width="stretch"):
             st.rerun()
         return
 
@@ -593,7 +598,7 @@ def show_plan_category_dialog():
             "세부플랜": st.column_config.TextColumn("세부 플랜", required=True),
         },
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         num_rows="dynamic",  # 행 추가/삭제 가능
         height=500,
     )
@@ -605,7 +610,7 @@ def show_plan_category_dialog():
 
     with col1:
         # 저장 버튼
-        if st.button("💾 저장", type="primary", use_container_width=True):
+        if st.button("💾 저장", type="primary", width="stretch"):
             if save_plan_category_mapping(edited_df):
                 st.success("✅ 설정이 저장되었습니다!")
                 st.rerun()
@@ -614,7 +619,7 @@ def show_plan_category_dialog():
 
     with col2:
         # 닫기 버튼
-        if st.button("닫기", use_container_width=True):
+        if st.button("닫기", width="stretch"):
             st.rerun()
 
 
@@ -924,7 +929,7 @@ def show_company_detail_breakdown(
         # 데이터 표시 (전체 폭, 높이 제한 없이 스크롤)
         st.dataframe(
             styled_df,
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             height=750,
             column_order=display_columns,
@@ -967,7 +972,9 @@ def main():
 
     # 타이틀 설정
     if plan_name:
-        st.title(f"🏆 보험 올림픽 - 돌격!!! 최저가 대전!!! - ({plan_name})[{payment_due_type_name}]")
+        st.title(
+            f"🏆 보험 올림픽 - 돌격!!! 최저가 대전!!! - ({plan_name})[{payment_due_type_name}]"
+        )
     else:
         st.title("🏆 보험 올림픽 - 돌격!!! 최저가 대전!!!")
 
@@ -987,13 +994,11 @@ def main():
 
     # 보장 티어 설정 버튼 (사이드바 맨 아래)
     st.sidebar.markdown("---")
-    if st.sidebar.button("⚙️ 보장 티어 설정", use_container_width=True, type="primary"):
+    if st.sidebar.button("⚙️ 보장 티어 설정", width="stretch", type="primary"):
         show_tier_settings_dialog()
 
     # 종목별 플랜 그룹 설정 버튼
-    if st.sidebar.button(
-        "🗂️ 종목별 플랜 그룹 설정", use_container_width=True, type="primary"
-    ):
+    if st.sidebar.button("🗂️ 종목별 플랜 그룹 설정", width="stretch", type="primary"):
         show_plan_category_dialog()
 
     # 메인 컨텐츠
@@ -1016,7 +1021,7 @@ def main():
             if human_table:
                 try:
                     df = pd.read_json(StringIO(human_table), orient="table")
-                    st.dataframe(df, use_container_width=True, height=600)
+                    st.dataframe(df, width="stretch", height=600)
                 except Exception as e:
                     st.error(f"데이터 표시 오류: {e}")
             else:
@@ -1049,7 +1054,7 @@ def main():
 
                 st.dataframe(
                     display_df,
-                    use_container_width=True,
+                    width="stretch",
                     height=600,
                     column_order=[
                         "보험사",
