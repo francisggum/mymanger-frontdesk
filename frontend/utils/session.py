@@ -60,7 +60,7 @@ def get_selected_plan():
         return None
     
     plan_options = {
-        f"{plan['plan_type_name']} ({plan['insu_compy_type_name']})": plan
+        f"{plan['plan_type_name']} ({plan['payment_due_type_name']})": plan
         for plan in plans
     }
     

@@ -59,12 +59,18 @@ class PlanInfo(BaseModel):
     plan_name: str
     plan_type: Optional[str] = ""
     plan_type_name: Optional[str] = ""
-    insu_compy_type_name: Optional[str] = ""
-    plan_payterm_type_name: Optional[str] = ""
-    plan_min_m_age: Optional[int] = 0
-    plan_max_m_age: Optional[int] = 0
-    plan_min_f_age: Optional[int] = 0
-    plan_max_f_age: Optional[int] = 0
+    insu_compy_type: Optional[str] = ""  # 보험사 유형 코드
+    insu_compy_type_name: Optional[str] = ""  # 보험사 유형명
+    refund_payment_type: Optional[str] = ""  # 환급금 지급 유형
+    simplified_underwriting_yn: Optional[str] = ""  # 간편심사 여부
+    renewal_yn: Optional[str] = ""  # 갱신 여부
+    notice_type: Optional[str] = ""  # 고지 유형
+    payment_due_type: Optional[str] = ""  # 납입 기간 유형 코드
+    payment_due_type_name: Optional[str] = ""  # 납입 기간 유형명
+    min_m_age: Optional[int] = 0  # 남성 최소 연령
+    max_m_age: Optional[int] = 0  # 남성 최대 연령
+    min_f_age: Optional[int] = 0  # 여성 최소 연령
+    max_f_age: Optional[int] = 0  # 여성 최대 연령
 
 
 @app.get("/")
@@ -76,18 +82,7 @@ async def root():
 async def fetch_plans():
     try:
         plans = db_manager.fetch_plans()
-        return [
-            PlanInfo(
-                **{
-                    **plan,
-                    "plan_min_m_age": int(plan.get("min_m_age", 0)),
-                    "plan_max_m_age": int(plan.get("max_m_age", 0)),
-                    "plan_min_f_age": int(plan.get("min_f_age", 0)),
-                    "plan_max_f_age": int(plan.get("max_f_age", 0)),
-                }
-            )
-            for plan in plans
-        ]
+        return [PlanInfo(**plan) for plan in plans]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

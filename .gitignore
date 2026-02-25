@@ -97,3 +97,6 @@ model_cache/
 
 # Docker
 .dockerignore
+
+# opencode
+opencode.*

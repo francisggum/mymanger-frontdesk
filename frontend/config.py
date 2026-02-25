@@ -3,6 +3,7 @@ Frontend 설정값 중앙화
 """
 
 import os
+from typing import Literal, TypedDict
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,10 +14,20 @@ BACKEND_URL = os.getenv("BACKEND_URL") or "http://localhost:8000"
 # 개발 모드 설정
 IS_DEVELOPMENT = os.getenv("ENVIRONMENT", "development") == "development"
 
+
+class PageConfig(TypedDict):
+    """Streamlit 페이지 설정 타입"""
+
+    page_title: str
+    page_icon: str
+    layout: Literal["centered", "wide"]
+    initial_sidebar_state: Literal["auto", "expanded", "collapsed"]
+
+
 # 페이지 설정
-PAGE_CONFIG = {
-    "page_title": "보험 비교 AI",
-    "page_icon": "🏥",
+PAGE_CONFIG: PageConfig = {
+    "page_title": "보험 올림픽V260216",
+    "page_icon": "🥇",
     "layout": "wide",
     "initial_sidebar_state": "expanded",
 }

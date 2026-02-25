@@ -92,56 +92,56 @@ def handle_chat_input():
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("뇌출혈 진단이 없는 회사는?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 3대진단금이 가장 저렴한 회사는?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("3대진단금이 가장 저렴한 회사는?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 통합암 진단이 없는 회사는?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("통합암 진단이 없는 회사는?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 암진단금이 가장 저렴한 회사는?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("암진단금이 가장 저렴한 회사는?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 보험료가 가장 저렴한 회사는?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("보험료가 가장 저렴한 회사는?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 삼겹살 맛있게 굽는 법 알려줘.",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("삼겹살 맛있게 굽는 법 알려줘.",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 db손해의 통합암진단의 세부 보장은?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("db손해의 통합암진단의 세부 보장은?",),
-                use_container_width=True,
+                width='stretch',
             )
             st.button(
                 f"🚀 현대해상의 통합암진단이 가장 비싼 이유는?",
                 help="개발용 기본 질문 사용",
                 on_click=set_prompt_callback,
                 args=("현대해상의 통합암진단이 가장 비싼 이유는?",),
-                use_container_width=True,
+                width='stretch',
             )
 
         with cols[1]:

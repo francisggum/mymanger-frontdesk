@@ -1,44 +1,46 @@
 """
 보험 비교 AI - 메인 애플리케이션
 
-Refactored version with clean component structure
+다중 페이지 구조의 메인 진입점
 """
 
 import streamlit as st
-import logging
 
 from config import PAGE_CONFIG
-from utils.session import init_session_state
-from components.sidebar import render_sidebar
-from components.chat import render_chat_interface
-from components.modal import render_comparison_modal
-
-# 로깅 설정
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
 
 
 def main():
     """메인 애플리케이션 진입점"""
     # 페이지 설정
-    st.set_page_config(**PAGE_CONFIG)
+    st.set_page_config(
+        page_title=PAGE_CONFIG["page_title"],
+        page_icon=PAGE_CONFIG["page_icon"],
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
 
-    # 세션 상태 초기화
-    init_session_state()
+    # 메인 랜딩 페이지
+    st.title("🥇 보험 올림픽")
+    st.markdown("---")
 
-    # 사이드바 렌더링
-    render_sidebar()
-
-    # 메인 페이지 제목
-    st.title("🏥 생손보플랜 보험료 분석")
-
-    # 비교표 모달 (조걶적으로 표시)
-    render_comparison_modal()
-
-    # 채팅 인터페이스
-    render_chat_interface()
+    st.markdown(
+        """
+    ### 👋 환영합니다!
+    
+    **보험 비교 AI**는 다양한 보험 상품을 비교 분석하여 
+    최적의 선택을 도와드리는 인공지능 기반 서비스입니다.
+    
+    ### 📋 제공 기능
+    
+    - **🏥 보험료 분석**: AI 기반 보험 상품 비교 및 분석
+    - **실시간 채팅**: 자연어로 보험 관련 질문에 답변
+    - **데이터 시각화**: 보험사별 보험료 비교표 제공
+    
+    ### 🚀 시작하기
+    
+    왼쪽 사이드바에서 **보험료 분석** 메뉴를 선택하여 시작하세요.
+    """
+    )
 
     # 푸터
     st.markdown("---")
