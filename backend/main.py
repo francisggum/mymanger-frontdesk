@@ -39,9 +39,9 @@ app.add_middleware(
 
 
 class LoadDataRequest(BaseModel):
-    plan_id: str
-    age: int
-    gender: str
+    plan_id: str = "000000011011"  # 기본값 설정
+    age: int = 46  # 기본값 설정
+    gender: str = "M"  # 기본값 설정 (남성)
 
 
 class ChatRequest(BaseModel):
@@ -52,6 +52,19 @@ class ChatRequest(BaseModel):
     plan_name: Optional[str] = None  # 플랜명
     gender: Optional[str] = None  # 성별 (남성/여성)
     age: Optional[int] = None  # 나이
+
+
+class CoverageMapping(BaseModel):
+    coverage_cd: str
+    coverage_name: Optional[str] = None
+
+
+class PlanCoverage(BaseModel):
+    plan_id: str
+    coverage_cd: str
+    guide_coverage_amount: Optional[float] = None
+    is_selected_coverage: Optional[str] = None
+    coverage_seq: Optional[int] = None
 
 
 class PlanInfo(BaseModel):
@@ -80,9 +93,46 @@ async def root():
 
 @app.post("/fetch-plans", response_model=List[PlanInfo])
 async def fetch_plans():
+    """
+    플랜 목록 조회 API
+
+    데이터베이스에 저장된 보험 플랜 목록을 조회하여 반환합니다.
+    이 엔드포인트는 프론트엔드에서 플랜 선택 UI를 구성할 때 사용됩니다.
+
+    Returns:
+        List[PlanInfo]: 보험 플랜 정보 목록
+        - 각 플랜에는 plan_id, plan_name, plan_type 등의 기본 정보 포함
+
+    Raises:
+        HTTPException: 데이터 조회 중 오류 발생 시 500 에러 반환
+    """
     try:
         plans = db_manager.fetch_plans()
         return [PlanInfo(**plan) for plan in plans]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/get-plan-standard-coverages", response_model=List[PlanCoverage])
+async def get_plan_standard_coverages():
+    """
+    플랜별 표준 보장 항목 조회
+    """
+    try:
+        coverages = db_manager.fetch_plan_standard_coverages()
+        return [PlanCoverage(**cov) for cov in coverages]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/get-coverage-mapping", response_model=List[CoverageMapping])
+async def get_coverage_mapping():
+    """
+    보장코드와 보장명 매핑 정보 조회
+    """
+    try:
+        mappings = db_manager.fetch_coverage_mapping()
+        return [CoverageMapping(**m) for m in mappings]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -117,6 +167,74 @@ async def get_comparison_tables(request: LoadDataRequest):
 
     except Exception as e:
         logger.error(f"비교표 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CoverageRecord(BaseModel):
+    company_code: str
+    company_name: str
+    product_code: str
+    product_name: str
+    coverage_cd: str
+    coverage_name: str
+    sum_premium: float
+    insur_item_name_list: str
+    insur_item_name_coverage_list: str
+    guide_premium_list: str
+    guide_contract_amount_max: float
+
+
+class CoverageResponse(BaseModel):
+    status: str
+    data: List[CoverageRecord]
+
+
+@app.post("/get-premium-coverages", response_model=CoverageResponse)
+async def get_premium_coverages(request: LoadDataRequest):
+    """
+    보험료 coverage 데이터 생성 API
+
+    각 보험사의 보장 항목별 보험료 정보를 반환합니다.
+
+    Returns:
+        CoverageResponse: CoverageResponse 스키마参照
+        - status: 처리 상태 ("success" 또는 "error")
+        - data: 보장 항목별 보험료 데이터 리스트
+            - company_code: 보험사 코드
+            - company_name: 보험사명
+            - product_code: 상품 코드
+            - product_name: 상품명
+            - coverage_cd: 보장 코드
+            - coverage_name: 보장명
+            - sum_premium: 총 보험료
+            - insur_item_name_list: 보장 항목명 리스트 (| 구분)
+            - insur_item_name_coverage_list: 보장 금액 리스트 (| 구분)
+            - guide_premium_list: 보험료 상세 리스트 (+ 구분)
+            - guide_contract_amount_max: 최대 계약 보장액
+
+    Raises:
+        HTTPException: 데이터 조회 중 오류 발생 시 500 에러 반환
+    """
+    try:
+        coverage_data = db_manager.process_premium_data_for_coverages(
+            request.plan_id, request.gender, request.age
+        )
+
+        # 로깅
+        logger.info(f"=== Coverage 데이터 생성 결과 ===")
+        logger.info(
+            f"플랜 ID: {request.plan_id}, 성별: {request.gender}, 나이: {request.age}"
+        )
+        logger.info(f"총 기록 수: {len(coverage_data)}")
+        logger.info("=== Coverage 데이터 생성 끝 ===")
+
+        return {
+            "status": "success",
+            "data": coverage_data,
+        }
+
+    except Exception as e:
+        logger.error(f"Coverage 데이터 생성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -157,8 +275,13 @@ async def chat_stream(request: ChatRequest):
 
             chunk_count = 0
             async for chunk in rag_system.hybrid_chat_stream_with_data(
-                request.query, request.llm_data, human_data_parsed, request.model,
-                request.plan_name, request.gender, request.age
+                request.query,
+                request.llm_data,
+                human_data_parsed,
+                request.model,
+                request.plan_name,
+                request.gender,
+                request.age,
             ):
                 chunk_count += 1
                 try:

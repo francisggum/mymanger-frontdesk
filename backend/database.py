@@ -235,7 +235,7 @@ class DatabaseManager:
                 guide_premium = row.get("guide_premium")
                 guide_contract_amount = row.get("guide_contract_amount")
                 logger.info(
-                    f"행 {i+1} - guide_premium: {guide_premium} (타입: {type(guide_premium)}), guide_contract_amount: {guide_contract_amount} (타입: {type(guide_contract_amount)})"
+                    f"행 {i + 1} - guide_premium: {guide_premium} (타입: {type(guide_premium)}), guide_contract_amount: {guide_contract_amount} (타입: {type(guide_contract_amount)})"
                 )
 
                 # 비정상 값 확인
@@ -244,7 +244,7 @@ class DatabaseManager:
                         math.isnan(guide_premium) or math.isinf(guide_premium)
                     ):
                         logger.warning(
-                            f"행 {i+1} - guide_premium에 비정상 값: {guide_premium}"
+                            f"행 {i + 1} - guide_premium에 비정상 값: {guide_premium}"
                         )
 
                 if isinstance(guide_contract_amount, (int, float)):
@@ -253,7 +253,7 @@ class DatabaseManager:
                         or math.isinf(guide_contract_amount)
                     ):
                         logger.warning(
-                            f"행 {i+1} - guide_contract_amount에 비정상 값: {guide_contract_amount}"
+                            f"행 {i + 1} - guide_contract_amount에 비정상 값: {guide_contract_amount}"
                         )
 
         return results
@@ -330,8 +330,9 @@ class DatabaseManager:
                 # inf, -inf, NaN 값 제거
                 premium_values = premium_values[
                     ~premium_values.apply(
-                        lambda x: isinstance(x, float)
-                        and (math.isnan(x) or math.isinf(x))
+                        lambda x: (
+                            isinstance(x, float) and (math.isnan(x) or math.isinf(x))
+                        )
                     )
                 ]
                 sum_premium = premium_values.sum() if len(premium_values) > 0 else 0
@@ -360,8 +361,9 @@ class DatabaseManager:
                 # inf, -inf, NaN 값 제거
                 contract_values = contract_values[
                     ~contract_values.apply(
-                        lambda x: isinstance(x, float)
-                        and (math.isnan(x) or math.isinf(x))
+                        lambda x: (
+                            isinstance(x, float) and (math.isnan(x) or math.isinf(x))
+                        )
                     )
                 ]
                 guide_contract_amount_max = (
@@ -419,6 +421,138 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"데이터 전처리 실패: {e}")
             raise Exception(f"Failed to process premium data for comparison: {str(e)}")
+
+    def process_premium_data_for_coverages(
+        self, plan_id: str, gender: str, age: int
+    ) -> List[Dict[str, Any]]:
+        """
+        보험료 데이터를 coverage용으로 전처리
+
+        Args:
+            plan_id: 플랜 ID
+            gender: 성별 (M/F)
+            age: 나이
+
+        Returns:
+            processed_df.to_dict(records) 형태의 리스트
+        """
+        try:
+            # 1. 기존 함수로 원본 데이터 조회
+            raw_data = self.fetch_premium_data(plan_id, gender, age)
+
+            if not raw_data:
+                logger.warning("조회된 데이터가 없습니다.")
+                return []
+
+            # 2. pandas DataFrame으로 변환
+            df = pd.DataFrame(raw_data)
+            logger.info(f"DataFrame 생성 완료: {len(df)}행")
+
+            # 3. 그룹화 기준에 따라 데이터 집계
+            unique_groups = df[
+                [
+                    "company_code",
+                    "company_name",
+                    "product_code",
+                    "product_name",
+                    "coverage_cd",
+                    "coverage_name",
+                ]
+            ].drop_duplicates()
+
+            processed_data = []
+            for _, group_row in unique_groups.iterrows():
+                company_code = group_row["company_code"]
+                company_name = group_row["company_name"]
+                product_code = group_row["product_code"]
+                product_name = group_row["product_name"]
+                coverage_cd = group_row["coverage_cd"]
+                coverage_name = group_row["coverage_name"]
+
+                # 해당 그룹의 데이터 필터링
+                group = df[
+                    (df["company_code"] == company_code)
+                    & (df["company_name"] == company_name)
+                    & (df["product_code"] == product_code)
+                    & (df["product_name"] == product_name)
+                    & (df["coverage_cd"] == coverage_cd)
+                    & (df["coverage_name"] == coverage_name)
+                ]
+
+                # sum_premium 계산 - 비정상 값 처리
+                premium_values = group["guide_premium"].dropna()
+                premium_values = premium_values[
+                    ~premium_values.apply(
+                        lambda x: (
+                            isinstance(x, float) and (math.isnan(x) or math.isinf(x))
+                        )
+                    )
+                ]
+                sum_premium = premium_values.sum() if len(premium_values) > 0 else 0
+                if math.isnan(sum_premium) or math.isinf(sum_premium):
+                    sum_premium = 0
+                    logger.warning(
+                        f"sum_premium이 비정상 값으로 0으로 설정됨: company_code={company_code}, coverage_cd={coverage_cd}"
+                    )
+
+                # insur_item_name_list 생성 (|로 조인)
+                insur_item_name_list = "|".join(group["insur_item_name"].astype(str))
+
+                # insur_item_name_coverage_list 생성 (|로 조인)
+                insur_item_name_coverage_list = "|".join(
+                    group["insur_item_coverage"].astype(str)
+                )
+
+                # guide_premium_list 생성 (+로 조인)
+                guide_premium_list = "+".join(
+                    self._safe_float_format(premium)
+                    for premium in group["guide_premium"]
+                )
+
+                # guide_contract_amount_max 계산 - 비정상 값 처리
+                contract_values = group["guide_contract_amount"].dropna()
+                contract_values = contract_values[
+                    ~contract_values.apply(
+                        lambda x: (
+                            isinstance(x, float) and (math.isnan(x) or math.isinf(x))
+                        )
+                    )
+                ]
+                guide_contract_amount_max = (
+                    contract_values.max() if len(contract_values) > 0 else 0
+                )
+                if math.isnan(guide_contract_amount_max) or math.isinf(
+                    guide_contract_amount_max
+                ):
+                    guide_contract_amount_max = 0
+                    logger.warning(
+                        f"guide_contract_amount_max이 비정상 값으로 0으로 설정됨: company_code={company_code}, coverage_cd={coverage_cd}"
+                    )
+
+                processed_data.append(
+                    {
+                        "company_code": company_code,
+                        "company_name": company_name,
+                        "product_code": product_code,
+                        "product_name": product_name,
+                        "coverage_cd": coverage_cd,
+                        "coverage_name": coverage_name,
+                        "sum_premium": sum_premium,
+                        "insur_item_name_list": insur_item_name_list,
+                        "insur_item_name_coverage_list": insur_item_name_coverage_list,
+                        "guide_premium_list": guide_premium_list,
+                        "guide_contract_amount_max": guide_contract_amount_max,
+                    }
+                )
+
+            processed_df = pd.DataFrame(processed_data)
+            logger.info(f"데이터 집계 완료: {len(processed_df)}개 그룹")
+
+            return processed_df.to_dict(orient="records")
+
+        except Exception as e:
+            logger.error(f"데이터 전처리 실패: {e}")
+            raise Exception(f"Failed to process premium data for coverages: {str(e)}")
 
     def _safe_float_format(self, value, prefix="", suffix=""):
         """
@@ -482,7 +616,9 @@ class DatabaseManager:
 
             # 셀 값 생성: sum_premium(guide_premium_list)
             df["cell_value"] = df.apply(
-                lambda row: f"{self._safe_float_format(row['sum_premium'], '', '')}({row['guide_premium_list']})",
+                lambda row: (
+                    f"{self._safe_float_format(row['sum_premium'], '', '')}({row['guide_premium_list']})"
+                ),
                 axis=1,
             )
 
@@ -637,6 +773,36 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"LLM용 데이터 생성 실패: {e}")
             return {}
+
+    def fetch_plan_standard_coverages(self) -> List[Dict[str, Any]]:
+        """
+        플랜별 표준 보장 항목 조회
+
+        Returns:
+            표준 보장 항목 리스트
+        """
+        query = """
+        SELECT plan_id, coverage_cd, guide_coverage_amount, 
+               is_selected_coverage, coverage_seq
+        FROM mmlfcp2.dbo.TB_MMLFCP_PLAN_COVERAGE
+        WHERE use_yn = 'Y'
+        ORDER BY plan_id, coverage_seq
+        """
+        return self.execute_query(query)
+
+    def fetch_coverage_mapping(self) -> List[Dict[str, Any]]:
+        """
+        보장코드와 보장명 매핑 정보 조회
+
+        Returns:
+            보장코드, 보장명 리스트
+        """
+        query = """
+        SELECT coverage_cd, coverage_name
+        FROM mmlfcp2.dbo.TB_MMLFCP_COVERAGE
+        WHERE use_yn = 'Y'
+        """
+        return self.execute_query(query)
 
 
 # 전역 데이터베이스 관리자 인스턴스
