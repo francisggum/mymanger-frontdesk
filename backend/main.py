@@ -1,19 +1,21 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
-import os
-import json
 import asyncio
+import json
 import logging
-from dotenv import load_dotenv
-from database import db_manager
-from rag_system import rag_system
-import pandas as pd
-import numpy as np
 import math
+import os
+from typing import Any, Dict, List, Optional
+
+import numpy as np
+import pandas as pd
+from database import db_manager
+from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from rag_system import rag_system
 
 logger = logging.getLogger(__name__)
 if logger.handlers:
@@ -29,6 +31,10 @@ logging.basicConfig(
 load_dotenv()
 
 app = FastAPI(title="Insurance Comparison AI API", version="1.0.0")
+
+# 2. GZip 압축 추가 (CORS 위에 두셔도 되고 아래에 두셔도 무방합니다)
+# 100KB(1024 * 100 bytes) 이상의 응답만 압축하여 CPU 자원을 효율적으로 사용합니다.
+app.add_middleware(GZipMiddleware, minimum_size=1024 * 100)
 
 app.add_middleware(
     CORSMiddleware,
