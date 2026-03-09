@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -324,6 +325,11 @@ async def chat_stream(request: ChatRequest):
             "X-Accel-Buffering": "no",  # Nginx buffering 방지
         },
     )
+
+
+# 2. 나머지 모든 경로를 'frontend' 폴더의 파일들로 연결합니다.
+# html=True 옵션을 주면 '/' 접속 시 자동으로 'index.html'을 찾습니다.
+app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
 
 
 def _clean_for_json_serialization(data: Any) -> Any:
