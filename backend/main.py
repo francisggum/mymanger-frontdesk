@@ -51,6 +51,23 @@ class LoadDataRequest(BaseModel):
     gender: str = "M"  # 기본값 설정 (남성)
 
 
+class PremiumAgeRequest(BaseModel):
+    """
+    연령별 보험료 조회 요청 모델
+
+    Attributes:
+        plan_id: 플랜 ID
+        company_cd: 보험사 코드
+        gender: 성별 (M/F)
+        age: 시작 나이
+    """
+
+    plan_id: str = "000000011011"
+    company_cd: str = "DB"
+    gender: str = "M"
+    age: int = 46
+
+
 class ChatRequest(BaseModel):
     query: str
     llm_data: Optional[Dict[str, Any]] = None
@@ -77,6 +94,7 @@ class PlanCoverage(BaseModel):
 class PlanInfo(BaseModel):
     plan_id: str
     plan_name: str
+    plan_category: Optional[str] = ""  # 플랜 카테고리
     plan_type: Optional[str] = ""
     plan_type_name: Optional[str] = ""
     insu_compy_type: Optional[str] = ""  # 보험사 유형 코드
@@ -187,6 +205,7 @@ class CoverageRecord(BaseModel):
     sum_premium: float
     insur_item_name_list: str
     insur_item_name_coverage_list: str
+    payment_due_list: str
     guide_premium_list: str
     guide_contract_amount_max: float
 
@@ -194,6 +213,36 @@ class CoverageRecord(BaseModel):
 class CoverageResponse(BaseModel):
     status: str
     data: List[CoverageRecord]
+
+
+class PremiumAgeRecord(BaseModel):
+    """
+    연령별 보장 보험료 응답 레코드
+
+    Attributes:
+        age: 나이
+        coverage_cd: 보장 코드
+        guide_contract_amount: 안내 계약 금액
+        guide_premium: 안내 보험료
+    """
+
+    age: int
+    coverage_cd: str
+    guide_contract_amount: int
+    guide_premium: int
+
+
+class PremiumAgeResponse(BaseModel):
+    """
+    연령별 보장 보험료 응답 모델
+
+    Attributes:
+        status: 처리 상태 ("success" 또는 "error")
+        data: 연령별 보장 보험료 데이터 리스트
+    """
+
+    status: str
+    data: List[PremiumAgeRecord]
 
 
 @app.post("/get-premium-coverages", response_model=CoverageResponse)
@@ -216,6 +265,7 @@ async def get_premium_coverages(request: LoadDataRequest):
             - sum_premium: 총 보험료
             - insur_item_name_list: 보장 항목명 리스트 (| 구분)
             - insur_item_name_coverage_list: 보장 금액 리스트 (| 구분)
+            - payment_due_list: 납입 기간 리스트 (| 구분)
             - guide_premium_list: 보험료 상세 리스트 (+ 구분)
             - guide_contract_amount_max: 최대 계약 보장액
 
@@ -242,6 +292,78 @@ async def get_premium_coverages(request: LoadDataRequest):
 
     except Exception as e:
         logger.error(f"Coverage 데이터 생성 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/get-premium-age", response_model=PremiumAgeResponse)
+async def get_premium_age(request: PremiumAgeRequest):
+    """
+    연령별 보장별 보험료 조회 API
+
+    하나의 플랜에 대한 하나의 보험사상품에서 동일한 성별의
+    입력된 나이 이후부터 최대가입연령까지의 보장별 보험료를 반환합니다.
+
+    Args:
+        request: PremiumAgeRequest
+            - plan_id: 플랜 ID
+            - company_cd: 보험사 코드
+            - gender: 성별 (M/F)
+            - age: 시작 나이
+
+    Returns:
+        PremiumAgeResponse: 연령별 보장별 보험료 데이터
+            - status: 처리 상태
+            - data: 연령별 보장 보험료 리스트
+                - age: 나이
+                - coverage_cd: 보장 코드
+                - guide_contract_amount: 안내 계약 금액
+                - guide_premium: 안내 보험료
+
+    Raises:
+        HTTPException: 입력 검증 오류 또는 데이터 조회 오류 발생 시 500 에러 반환
+    """
+    try:
+        # 입력 검증
+        if not request.plan_id:
+            raise HTTPException(status_code=400, detail="plan_id는 필수 입력값입니다.")
+        if not request.company_cd:
+            raise HTTPException(
+                status_code=400, detail="company_cd는 필수 입력값입니다."
+            )
+        if request.gender not in ["M", "F"]:
+            raise HTTPException(
+                status_code=400, detail="gender는 'M' 또는 'F'만 허용됩니다."
+            )
+        if request.age < 0 or request.age > 100:
+            raise HTTPException(
+                status_code=400, detail="age는 0에서 100 사이의 값이어야 합니다."
+            )
+
+        # 데이터 조회
+        premium_data = db_manager.fetch_premium_by_age(
+            plan_id=request.plan_id,
+            gender=request.gender,
+            age=request.age,
+            company_cd=request.company_cd,
+        )
+
+        # 로깅
+        logger.info(f"=== 연령별 보장별 보험료 조회 결과 ===")
+        logger.info(
+            f"플랜 ID: {request.plan_id}, 보험사: {request.company_cd}, 성별: {request.gender}, 시작 나이: {request.age}"
+        )
+        logger.info(f"총 기록 수: {len(premium_data)}")
+        logger.info("=== 연령별 보장별 보험료 조회 끝 ===")
+
+        return {
+            "status": "success",
+            "data": premium_data,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"연령별 보장별 보험료 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
