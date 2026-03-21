@@ -83,6 +83,19 @@ class CoverageMapping(BaseModel):
     coverage_name: Optional[str] = None
 
 
+class CoverageInsurMappingRecord(BaseModel):
+    coverage_cd: str
+    coverage_name: str
+    insur_cd: str
+    guide_insur_amount: float
+    use_yn: str
+
+
+class CoverageInsurMappingResponse(BaseModel):
+    status: str
+    data: List[CoverageInsurMappingRecord]
+
+
 class PlanCoverage(BaseModel):
     plan_id: str
     coverage_cd: str
@@ -159,6 +172,32 @@ async def get_coverage_mapping():
         mappings = db_manager.fetch_coverage_mapping()
         return [CoverageMapping(**m) for m in mappings]
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/get-coverage-insur-mapping", response_model=CoverageInsurMappingResponse)
+async def get_coverage_insur_mapping():
+    """
+    보장코드-담보코드 매핑 정보 조회
+
+    Returns:
+        CoverageInsurMappingResponse: 보장코드-담보코드 매핑 정보
+            - status: 처리 상태 ("success" 또는 "error")
+            - data: 매핑 데이터 리스트
+                - coverage_cd: 보장 코드
+                - coverage_name: 보장명
+                - insur_cd: 담보 코드
+                - guide_insur_amount: 가이드 보험금액 (float)
+                - use_yn: 사용 여부
+
+    Raises:
+        HTTPException: 데이터 조회 중 오류 발생 시 500 에러 반환
+    """
+    try:
+        mapping_data = db_manager.get_coverage_insur_mapping()
+        return {"status": "success", "data": mapping_data}
+    except Exception as e:
+        logger.error(f"보장코드-담보코드 매핑 조회 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -245,12 +284,93 @@ class PremiumAgeResponse(BaseModel):
     data: List[PremiumAgeRecord]
 
 
+class PremiumCoverageRecord(BaseModel):
+    """
+    보장별 보험료 응답 레코드
+    """
+
+    company_code: str
+    company_name: str
+    product_code: str
+    product_name: str
+    product_detail_name: Optional[str] = None
+    join_condition: Optional[str] = None
+    coverage_cd: str
+    coverage_name: str
+    coverage_seq: Optional[int] = None
+    is_selected_coverage: Optional[str] = None
+    guide_coverage_amount: Optional[float] = None
+    guide_coverage_premium: Optional[int] = None
+    coverage_amount_ratio: Optional[float] = None
+
+
+class PremiumCoverageResponse(BaseModel):
+    status: str
+    data: List[PremiumCoverageRecord]
+
+
+@app.post("/get-premium-coverage_single", response_model=PremiumCoverageResponse)
+async def get_premium_coverage_single(request: LoadDataRequest):
+    """
+    보장별 보험료 조회 API
+
+    플랜별 보장 항목별로 합산된 보험료 정보를 반환합니다.
+
+    Args:
+        request: LoadDataRequest
+            - plan_id: 플랜 ID
+            - gender: 성별 (M/F)
+            - age: 나이
+
+    Returns:
+        PremiumCoverageResponse: 보장별 보험료 데이터
+            - status: 처리 상태
+            - data: 보장별 보험료 리스트
+                - company_code: 보험사 코드
+                - company_name: 보험사명
+                - product_code: 상품 코드
+                - product_name: 상품명
+                - product_detail_name: 상품 상세명
+                - join_condition: 가입조건
+                - coverage_cd: 보장 코드
+                - coverage_name: 보장명
+                - coverage_seq: 보장 순번
+                - is_selected_coverage: 선택 보장 여부
+                - guide_coverage_amount: 가이드 보장 금액
+                - guide_coverage_premium: 가이드 보장 보험료
+                - coverage_amount_ratio: 보장 금액 비율
+
+    Raises:
+        HTTPException: 데이터 조회 중 오류 발생 시 500 에러 반환
+    """
+    try:
+        premium_data = db_manager.fetch_premium_data_coverage(
+            request.plan_id, request.gender, request.age
+        )
+
+        logger.info(f"=== 보장별 보험료 조회 결과 ===")
+        logger.info(
+            f"플랜 ID: {request.plan_id}, 성별: {request.gender}, 나이: {request.age}"
+        )
+        logger.info(f"총 기록 수: {len(premium_data)}")
+        logger.info("=== 보장별 보험료 조회 끝 ===")
+
+        return {
+            "status": "success",
+            "data": premium_data,
+        }
+
+    except Exception as e:
+        logger.error(f"보장별 보험료 조회 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/get-premium-coverages", response_model=CoverageResponse)
 async def get_premium_coverages(request: LoadDataRequest):
     """
     보험료 coverage 데이터 생성 API
 
-    각 보험사의 보장 항목별 보험료 정보를 반환합니다.
+    각 보험사의 보장 항목별-상세 주특약별 보험료 정보를 반환합니다.
 
     Returns:
         CoverageResponse: CoverageResponse 스키마参照

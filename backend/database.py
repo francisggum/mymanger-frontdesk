@@ -1041,6 +1041,99 @@ class DatabaseManager:
 
         return results
 
+    def get_coverage_insur_mapping(self) -> List[Dict[str, Any]]:
+        """
+        보장코드-담보코드 매핑 정보 조회
+
+        Returns:
+            보장코드, 보장명, 담보코드, 가이드보험금액, 사용여부 리스트
+        """
+        query = """
+        SELECT TB_MMLFCP_COVERAGE_INSUR_MAPPING.[coverage_cd]
+             , [coverage_name]
+             , [insur_cd]
+             , [guide_insur_amount]
+             , [use_yn]
+          FROM dbo.TB_MMLFCP_COVERAGE_INSUR_MAPPING
+        INNER JOIN dbo.TB_MMLFCP_COVERAGE
+            ON TB_MMLFCP_COVERAGE_INSUR_MAPPING.coverage_cd = TB_MMLFCP_COVERAGE.coverage_cd
+        """
+        return self.execute_query(query)
+
+    def fetch_premium_data_coverage(
+        self, plan_id: str, gender: str, age: int
+    ) -> List[Dict[str, Any]]:
+        """
+        보장별 보험료 조회
+
+        Args:
+            plan_id: 플랜 ID
+            gender: 성별 (M/F)
+            age: 나이
+
+        Returns:
+            보장별 보험료 데이터 리스트
+        """
+        query = """
+        SELECT
+            a.company_code,
+            e.CD_NM as company_name,
+            a.product_code,
+            d.prdt_name as product_name,
+            d.attr1 as product_detail_name,
+            d.mb_conditions as join_condition,
+            a.coverage_cd,
+            f.coverage_name,
+            c.coverage_seq,
+            c.is_selected_coverage,
+            c.guide_coverage_amount,
+            CASE
+                WHEN a.coverage_amount > 0 THEN
+                    CAST((c.guide_coverage_amount * a.premium) / a.coverage_amount AS INT)
+                ELSE 0
+            END as guide_coverage_premium,
+            ISNULL((SELECT TOP 1 coverage_amount_ratio 
+                    FROM TB_MMLFCP_AMOUNT_RATIO 
+                    WHERE a.company_code = company_code 
+                    AND a.product_code = product_code 
+                    AND c.coverage_cd = coverage_cd), 1) as coverage_amount_ratio
+        FROM
+            TB_MMLFCP_COVERAGE_PRICE a
+        JOIN TB_MMLFCP_PLAN_PRODUCT b
+            ON a.company_code = b.company_code
+            AND a.product_code = b.product_code
+            AND b.plan_id = ?
+        JOIN TB_MMLFCP_PLAN_COVERAGE c
+            ON a.coverage_cd = c.coverage_cd
+            AND c.plan_id = ?
+            AND c.use_yn = 'Y'
+        JOIN mmapi.dbo.TB_TIC_PRDT AS d
+            ON a.company_code = d.compy_cd
+            AND a.product_code = d.prdt_cd
+        JOIN mmapi.dbo.TB_COMM_CD e
+            ON a.company_code = e.CD_ID
+            AND e.UPP_CD_ID = 'COMPY'
+        JOIN TB_MMLFCP_COVERAGE f
+            ON a.coverage_cd = f.coverage_cd
+        WHERE
+            a.gender = ?
+            AND a.age = ?
+        ORDER BY
+            a.company_code,
+            c.coverage_seq
+        """
+        params = [plan_id, plan_id, gender, age]
+
+        logger.info(
+            f"보장별 보험료 조회 시작 - plan_id: {plan_id}, gender: {gender}, age: {age}"
+        )
+
+        results = self.execute_query(query, params)
+
+        logger.info(f"보장별 보험료 조회 완료 - {len(results)}개 행 반환")
+
+        return results
+
 
 # 전역 데이터베이스 관리자 인스턴스
 db_manager = DatabaseManager()
