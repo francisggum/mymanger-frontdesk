@@ -103,3 +103,4 @@ opencode.*
 
 # Ignore frontend build artifacts
 backend/frontend
+.opencode

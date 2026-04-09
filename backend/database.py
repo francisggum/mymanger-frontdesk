@@ -18,27 +18,27 @@ logger = logging.getLogger(__name__)
 
 PLAN_CATEGORY_MAPPING = {
     "생손보 건강(무해지)": "건강",
-    "생손보 간편3.3.5(무해지)": "건강",
-    "생손보 간편3.5.5(무해지)": "건강",
-    "생손보 간편3.10.10(5)(무해지)": "건강",
+    "생손보 간편3.3.5(무해지)": "간편",
+    "생손보 간편3.5.5(무해지)": "간편",
+    "생손보 간편3.10.10(5)(무해지)": "간편",
     "손보 종합(표준환급)": "건강",
     "손보 종합(무해지)": "건강",
     "손보 5.10.10(무해지)": "건강",
     "손보 여성건강(무해지)": "건강",
     "생보 건강(무해지)": "건강",
     "생보 암(무해지)": "건강",
-    "생보 간편3.3.5(무해지)": "건강",
-    "생보 간편3.5.5(무해지)": "건강",
-    "생보 간편3.10.5(무해지)": "건강",
-    "손보 간편3.2.5(무해지)": "건강",
-    "손보 간편3.3.5(무해지)": "건강",
-    "손보 간편3.5.5(무해지)": "건강",
-    "손보 간편3.10.10(5)(무해지)": "건강",
+    "생보 간편3.3.5(무해지)": "간편",
+    "생보 간편3.5.5(무해지)": "간편",
+    "생보 간편3.10.5(무해지)": "간편",
+    "손보 간편3.2.5(무해지)": "간편",
+    "손보 간편3.3.5(무해지)": "간편",
+    "손보 간편3.5.5(무해지)": "간편",
+    "손보 간편3.10.10(5)(무해지)": "간편",
     "손보 어린이(표준환급)": "어린이",
     "손보 어린이(무해지)": "어린이",
-    "손보 청소년(표준환급)": "청소년",
-    "손보 청소년(무해지)": "청소년",
-    "손보 청소년5.10.10(무해지)": "청소년",
+    "손보 청소년(표준환급)": "건강",
+    "손보 청소년(무해지)": "건강",
+    "손보 청소년5.10.10(무해지)": "건강",
     "손보 실손": "실손",
     "손보 간편실손": "실손",
     "생보 치매(무해지)": "치매",
@@ -66,7 +66,7 @@ class DatabaseManager:
 
     def __init__(self):
         self.server = os.getenv("DB_HOST", "localhost")
-        self.database = os.getenv("DB_NAME", "mmapi")
+        self.database = os.getenv("DB_NAME")
         self.username = os.getenv("DB_USER")
         self.password = os.getenv("DB_PASSWORD")
         self.driver = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
@@ -189,7 +189,9 @@ class DatabaseManager:
             plan["plan_name"] = plan_name
 
             # plan_category 매핑
-            plan["plan_category"] = _get_plan_category(plan_name)
+            plan["plan_category"] = _get_plan_category(
+                f'{plan["insu_compy_type_name"]} {plan_name}'
+            )
 
             # 나이 필드가 None인 경우 0으로 설정
             for age_field in ["min_m_age", "max_m_age", "min_f_age", "max_f_age"]:
@@ -214,7 +216,7 @@ class DatabaseManager:
             company_code, 
             product_code, 
             (SELECT TOP 1 cd_nm FROM mmapi.dbo.TB_COMM_CD WHERE cd_id = company_code AND UPP_CD_ID = 'COMPY') AS company_nm
-        FROM mmlfcp2.dbo.TB_MMLFCP_PLAN_PRODUCT
+        FROM mmlfcp.dbo.TB_MMLFCP_PLAN_PRODUCT
         WHERE use_yn = 'Y'
         """
 
@@ -878,7 +880,7 @@ class DatabaseManager:
         query = """
         SELECT plan_id, coverage_cd, guide_coverage_amount, 
                is_selected_coverage, coverage_seq
-        FROM mmlfcp2.dbo.TB_MMLFCP_PLAN_COVERAGE
+        FROM TB_MMLFCP_PLAN_COVERAGE
         WHERE use_yn = 'Y'
         ORDER BY plan_id, coverage_seq
         """
@@ -898,7 +900,7 @@ class DatabaseManager:
             '주계약' AS coverage_name
         UNION ALL
         SELECT coverage_cd, coverage_name
-        FROM mmlfcp2.dbo.TB_MMLFCP_COVERAGE
+        FROM TB_MMLFCP_COVERAGE
         WHERE use_yn = 'Y'
         """
         return self.execute_query(query)
