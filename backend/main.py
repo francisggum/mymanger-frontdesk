@@ -124,6 +124,23 @@ class PlanInfo(BaseModel):
     max_f_age: Optional[int] = 0  # 여성 최대 연령
 
 
+class ProductInfo(BaseModel):
+    """
+    상품 정보 응답 모델
+
+    Attributes:
+        plan_id: 플랜 ID
+        company_code: 보험사 코드
+        product_code: 상품 코드
+        company_nm: 보험사명
+    """
+
+    plan_id: str
+    company_code: str
+    product_code: str
+    company_nm: Optional[str] = ""
+
+
 @app.get("/")
 async def root():
     return {"message": "Insurance Comparison AI API is running"}
@@ -147,6 +164,27 @@ async def fetch_plans():
     try:
         plans = db_manager.fetch_plans()
         return [PlanInfo(**plan) for plan in plans]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/fetch-products", response_model=List[ProductInfo])
+async def fetch_products():
+    """
+    상품 목록 조회 API
+
+    TB_MMLFCP_PLAN_PRODUCT 테이블에서 사용 가능한 상품 목록을 조회하여 반환합니다.
+    각 상품에는 플랜 ID, 보험사 코드, 상품 코드, 보험사명이 포함됩니다.
+
+    Returns:
+        List[ProductInfo]: 상품 정보 목록
+
+    Raises:
+        HTTPException: 데이터 조회 중 오류 발생 시 500 에러 반환
+    """
+    try:
+        products = db_manager.fetch_products()
+        return [ProductInfo(**product) for product in products]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

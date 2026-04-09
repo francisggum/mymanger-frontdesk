@@ -198,6 +198,32 @@ class DatabaseManager:
 
         return plans
 
+    def fetch_products(self) -> List[Dict[str, Any]]:
+        """
+        상품 목록 조회
+
+        TB_MMLFCP_PLAN_PRODUCT 테이블에서 사용 가능한 상품 목록을 조회합니다.
+        보험사 코드는 TB_COMM_CD 테이블을 통해保险公司명을 조회합니다.
+
+        Returns:
+            상품 정보 리스트 (plan_id, company_code, product_code, company_nm 포함)
+        """
+        query = """
+        SELECT 
+            plan_id, 
+            company_code, 
+            product_code, 
+            (SELECT TOP 1 cd_nm FROM mmapi.dbo.TB_COMM_CD WHERE cd_id = company_code AND UPP_CD_ID = 'COMPY') AS company_nm
+        FROM mmlfcp2.dbo.TB_MMLFCP_PLAN_PRODUCT
+        WHERE use_yn = 'Y'
+        """
+
+        products = self.execute_query(query)
+
+        logger.info(f"상품 목록 조회 완료: {len(products)}개 상품")
+
+        return products
+
     def fetch_premium_data(
         self, plan_id: str, gender: str, age: int
     ) -> List[Dict[str, Any]]:
