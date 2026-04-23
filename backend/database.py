@@ -190,7 +190,7 @@ class DatabaseManager:
 
             # plan_category 매핑
             plan["plan_category"] = _get_plan_category(
-                f'{plan["insu_compy_type_name"]} {plan_name}'
+                f"{plan['insu_compy_type_name']} {plan_name}"
             )
 
             # 나이 필드가 None인 경우 0으로 설정
