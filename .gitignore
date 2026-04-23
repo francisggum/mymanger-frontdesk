@@ -100,3 +100,7 @@ model_cache/
 
 # opencode
 opencode.*
+
+# Ignore frontend build artifacts
+backend/frontend
+.opencode

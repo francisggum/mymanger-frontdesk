@@ -45,10 +45,10 @@
 
 ### 2.4. API 로그 테이블
 
-| 테이블명                  | 설명           | 주요 컬럼                                          |
-|:--------------------- |:------------ |:---------------------------------------------- |
-| **tb_mmapi_accesslog**  | API 접근 로그    | `ga_id`, `ap_name`, `api_name`, `in_date`      |
-| **tb_mmapi_gen_jwt_log** | JWT 생성 로그    | `ga_id`, `in_date`                              |
+| 테이블명                     | 설명        | 주요 컬럼                                     |
+|:------------------------ |:--------- |:----------------------------------------- |
+| **tb_mmapi_accesslog**   | API 접근 로그 | `ga_id`, `ap_name`, `api_name`, `in_date` |
+| **tb_mmapi_gen_jwt_log** | JWT 생성 로그 | `ga_id`, `in_date`                        |
 
 ### 2.5. 시노님(Synonym)을 통한 외부 테이블 참조
 
@@ -56,26 +56,26 @@
 
 #### 2.5.1. GA/공통 정보 (common DB)
 
-| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
-|:-------- |:-------- |:---- |:-------- |
+| 시노님명           | 참조 객체              | 설명                    | 주요 컬럼                          |
+|:-------------- |:------------------ |:--------------------- |:------------------------------ |
 | **TB_GA_INFO** | common..TB_GA_INFO | GA(General Agency) 정보 | `ga_id`, `ga_name`, `use_yn` 등 |
 
 #### 2.5.2. 생명보험 상품 정보 (mmlicp DB)
 
-| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
-|:-------- |:-------- |:---- |:-------- |
-| **tb_li_prdt** | mmlicp..tb_li_prdt | 생명보험 상품 마스터 | `product_code`, `product_name`, `company_code` 등 |
-| **tb_li_prdt_cntrc_amnt_type** | mmlicp..tb_li_prdt_cntrc_amnt_type | 생명보험 가입금액 타입 | `product_code`, `cntrc_amnt_type`, `use_yn` 등 |
-| **tb_li_prdt_price** | mmlicp..tb_li_prdt_price | 생명보험 상품 보험료 | `product_code`, `gender`, `age`, `premium` 등 |
-| **tb_li_prdt_termination_refund** | mmlicp..tb_li_prdt_termination_refund | 생명보험 해지환급금 | `product_code`, `year`, `refund_amount` 등 |
-| **tb_li_prdt_type_cnt_cnd** | mmlicp..tb_li_prdt_type_cnt_cnd | 생명보험 상품 계약 조건 | `product_code`, `cnt_cnd_type`, `value` 등 |
-| **pro_licp_get_dat** | mmlicp..pro_licp_get_dat | 생명보험 데이터 조회 프로시저 | 입력/출력 파라미터 기반 |
-| **pro_licp_get_data** | mmlicp..pro_licp_get_data | 생명보험 데이터 조회 프로시저(확장) | 입력/출력 파라미터 기반 |
+| 시노님명                              | 참조 객체                                 | 설명                   | 주요 컬럼                                            |
+|:--------------------------------- |:------------------------------------- |:-------------------- |:------------------------------------------------ |
+| **tb_li_prdt**                    | mmlicp..tb_li_prdt                    | 생명보험 상품 마스터          | `product_code`, `product_name`, `company_code` 등 |
+| **tb_li_prdt_cntrc_amnt_type**    | mmlicp..tb_li_prdt_cntrc_amnt_type    | 생명보험 가입금액 타입         | `product_code`, `cntrc_amnt_type`, `use_yn` 등    |
+| **tb_li_prdt_price**              | mmlicp..tb_li_prdt_price              | 생명보험 상품 보험료          | `product_code`, `gender`, `age`, `premium` 등     |
+| **tb_li_prdt_termination_refund** | mmlicp..tb_li_prdt_termination_refund | 생명보험 해지환급금           | `product_code`, `year`, `refund_amount` 등        |
+| **tb_li_prdt_type_cnt_cnd**       | mmlicp..tb_li_prdt_type_cnt_cnd       | 생명보험 상품 계약 조건        | `product_code`, `cnt_cnd_type`, `value` 등        |
+| **pro_licp_get_dat**              | mmlicp..pro_licp_get_dat              | 생명보험 데이터 조회 프로시저     | 입력/출력 파라미터 기반                                    |
+| **pro_licp_get_data**             | mmlicp..pro_licp_get_data             | 생명보험 데이터 조회 프로시저(확장) | 입력/출력 파라미터 기반                                    |
 
 #### 2.5.3. OC 상품 정보 (mmoc DB)
 
-| 시노님명 | 참조 객체 | 설명 | 주요 컬럼 |
-|:-------- |:-------- |:---- |:-------- |
+| 시노님명               | 참조 객체                | 설명                      | 주요 컬럼                                    |
+|:------------------ |:-------------------- |:----------------------- |:---------------------------------------- |
 | **tb_od_products** | mmoc..tb_od_products | OC(Overseas Care) 상품 정보 | `product_id`, `product_name`, `use_yn` 등 |
 
 ---
@@ -115,6 +115,94 @@
   ### 3.4. 플랜 조회 (Plan Info)
   
   플랜의 기본 속성을 조회하며, 공통 코드(`TB_COMM_CD`)를 조인하여 사람이 읽을 수 있는 명칭(보험사 타입, 플랜 타입, 납입 주기 등)을 가져옵니다.
+
+## 3.5. 상세 담보 및 보험료 조회 (Detail Premium Calculation)
+
+특정 플랜(`plan_id`)에 대해 성별, 나이를 기준으로 **실제 상품의 담보(특약)별 상세 정보와 가이드 금액에 따른 예상 보험료**를 산출하는 쿼리입니다.
+
+이 쿼리는 **플랜 설계(추상적 보장)**와 **실제 보험 상품 데이터(구체적 담보)**를 결합하여 최종적인 보장 내역을 만들어냅니다.
+
+### 3.5.1. 쿼리 조인 다이어그램 (Query Join Diagram)
+
+복잡한 테이블 조인 관계를 도식화하면 다음과 같습니다. 중심에는 가격 정보(`TB_TIC_PRDT_PRICE`)가 있으며, **플랜 정보(Subquery E)**와 **상품 마스터 정보**들이 결합되는 구조입니다.
+
+```mermaid
+graph TD
+    %% 노드 스타일 정의
+    classDef main fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef sub fill:#bbf,stroke:#333,stroke-width:1px;
+    classDef master fill:#efe,stroke:#333,stroke-width:1px;
+
+    %% 메인 테이블 (가격)
+    PRICE[("TB_TIC_PRDT_PRICE (a)<br/>기준 보험료/가입금액")]:::main
+
+    %% 1. 플랜-상품 필터링
+    PLAN_PROD[("TB_MMLFCP_PLAN_PRODUCT (b)<br/>플랜에 포함된 상품 필터링")]:::sub
+
+    %% 2. 상품 및 담보 마스터 정보
+    PROD_MST[("TB_TIC_PRDT (c)<br/>상품명 정보")]:::master
+    ITEM_MST[("TB_TIC_PRDT_D (d)<br/>담보명/납입기간 정보")]:::master
+
+    %% 3. 플랜 가입금액 가이드 (서브쿼리 E)
+    subgraph Subquery_E [서브쿼리 e : 플랜별 담보 가이드 금액 산출]
+        direction TB
+        PLAN_COV["TB_MMLFCP_PLAN_COVERAGE (a)<br/>플랜 보장 설정"]
+        MAP["TB_MMLFCP_COVERAGE_INSUR_MAPPING (b)<br/>보장-실제담보 매핑"]
+        PLAN_COV --> MAP
+    end
+
+    %% 조인 관계 연결
+    PLAN_PROD -->|1. company_code, product_code| PRICE
+    PRICE -->|2. company_code, product_code| PROD_MST
+    PRICE -->|3. company_code, product_code, insur_cd| ITEM_MST
+
+    %% 수정된 부분: 그룹(Subquery_E)이 아니라 내부 노드(MAP)에서 연결 & 따옴표 사용
+    MAP -- "4. insur_cd (가이드금액 포함)" --> PRICE
+```
+
+### 3.5.2. 쿼리 분석 및 데이터 흐름
+
+쿼리는 크게 **네 가지 데이터 소스**를 결합하여 결과를 도출합니다.
+
+1. **기준 보험료 테이블 (`a`: TB_TIC_PRDT_PRICE)**
+   
+   * **역할:** 보험사, 상품, 담보, 성별, 연령별 **단위 보험료(`premium`)**와 **기준 가입금액(`std_contract_amt`)**을 제공합니다.
+   * **조건:** `@gender`, `@age` 파라미터로 필터링됩니다.
+
+2. **플랜-상품 매핑 (`b`: TB_MMLFCP_PLAN_PRODUCT)**
+   
+   * **역할:** 해당 플랜(`@plan_id`)에 구성된 **보험사 및 상품 코드**만 조회하도록 필터링 역할을 수행합니다.
+
+3. **상품 및 담보 마스터 (`c`, `d`: TB_TIC_PRDT, TB_TIC_PRDT_D)**
+   
+   * **역할:** 코드(`cd`)로 되어 있는 상품명(`prdt_name`), 담보명(`insur_nm`), 보장내용(`insur_bojang`), 납입기간(`pay_term`) 등 **사용자가 식별 가능한 텍스트 정보**를 가져옵니다.
+
+4. **보장 가이드 금액 서브쿼리 (`e`: Derived Table)**
+   
+   * **역할:** 추상적인 보장(`coverage_cd`)을 실제 상품의 담보(`insur_cd`)로 변환하고, **얼마를 가입시킬 것인지(`guide_insur_amount`)** 정보를 제공합니다.
+   * **구성:** `TB_MMLFCP_PLAN_COVERAGE` (플랜 설정) + `TB_MMLFCP_COVERAGE_INSUR_MAPPING` (매핑 정보)
+
+### 3.5.3. 주요 컬럼 계산 로직
+
+* **`guide_premium` (가이드 보험료)**
+  
+  * 플랜에서 설정한 가입금액(`guide_contract_amount`)에 맞춰 비례식으로 보험료를 계산합니다.
+  
+  * **공식:** `(가이드금액 * 기준보험료) / 기준가입금액`
+  
+  * **SQL:**
+    
+    ```sql
+    case
+        when a.std_contract_amt <= 0 then 0
+        else CAST((e.guide_contract_amount * a.premium) / a.std_contract_amt AS INT)
+    end
+    ```
+
+* **`coverage_name` (보장 그룹명)**
+  
+  * `e.coverage_cd`를 이용해 `TB_MMLFCP_COVERAGE` 테이블에서 보장명을 가져옵니다.
+  * 매핑되지 않은 경우(조인이 안 된 경우) `'최저기본계약조건'`으로 표시하여, 필수 담보임을 암시하거나 예외 처리를 수행합니다.  
   
   ---
 
@@ -179,7 +267,7 @@ SELECT TOP 5
 | 000000011011 | HY           | 12601001     | Y      |
 | 000000011011 | KB           | 12601001     | Y      |
 
-#### C. TB_MMLFCP_PLAN_COVERAGE (플랜-보장 설정)
+#### C. TB_MMLFCP_PLAN_COVERAGE (플랜별-보장급부 설정)
 
 ```sql
 -- 플랜별 담보 구성 테이블 (TB_MMLFCP_PLAN_COVERAGE)
@@ -190,7 +278,8 @@ SELECT TOP 5
      , [is_selected_coverage]
      , [coverage_seq]
      , [use_yn]
-  FROM dbo.TB_MMLFCP_PLAN_COVERAGE;
+  FROM dbo.TB_MMLFCP_PLAN_COVERAGE
+  --WHERE use_yn = 'Y';
 ```
 
 | plan_id      | coverage_cd | guide_coverage_amount | is_selected_coverage | coverage_seq | use_yn |
@@ -224,31 +313,79 @@ SELECT TOP 5
 | DB           | 12601001     | a001        | F      | 18  | 1000.0          | 440.0   |
 | DB           | 12601001     | a001        | F      | 19  | 1000.0          | 440.0   |
 
-#### E. TB_TIC_PRDT (상품 마스터)
+#### E. TB_TIC_PRDT (상품 마스터 - mmapi DB)
 
-| compy_cd | prdt_cd | prdt_name | attr1 | mb_conditions | use_yn |
-| -------- | ------- | --------- | ----- | ------------- | ------ |
-| INS01    | PRD001  | 든든한암보험    | 순수보장형 | 만기환급없음        | Y      |
-| INS02    | PRD002  | 행복한종신보험   | 만기환급형 | 80세만기         | Y      |
-| INS01    | PRD003  | 간편상해보험    | 갱신형   | 3년갱신          | Y      |
+**컬럼 명세:**
 
-#### F. TB_TIC_PRDT_D (담보 상세)
+| 컬럼명           | 데이터 타입   | 길이  | NULL 허용 | 설명     |
+|:------------- |:-------- |:--- |:------- |:------ |
+| compy_cd      | nvarchar | 10  | NO      | 보험사 코드 |
+| prdt_cd       | nvarchar | 20  | NO      | 상품 코드  |
+| prdt_name     | nvarchar | 200 | YES     | 상품명    |
+| attr1         | nvarchar | 50  | YES     | 상품 속성1 |
+| mb_conditions | nvarchar | 100 | YES     | 주계약 조건 |
+| use_yn        | nvarchar | 1   | YES     | 사용 여부  |
 
-| compy_cd | prdt_cd | insur_cd | insur_nm | insur_bojang | pay_term |
-| -------- | ------- | -------- | -------- | ------------ | -------- |
-| INS01    | PRD001  | TRT_001  | 일반암진단비   | 암진단시 지급      | 20년납     |
-| INS01    | PRD001  | TRT_002  | 유사암진단비   | 유사암진단시 지급    | 20년납     |
-| INS01    | PRD001  | TRT_MAIN | 주계약(사망)  | 사망시 지급       | 20년납     |
-| INS02    | PRD002  | TRT_001  | 일반암진단비   | 암진단시 지급      | 20년납     |
+**샘플 데이터:**
 
-#### G. TB_TIC_PRDT_PRICE (담보별 기준 보험료)
+| compy_cd | prdt_cd  | prdt_name | attr1 | mb_conditions | use_yn |
+| -------- | -------- | --------- | ----- | ------------- | ------ |
+| DB       | 12601001 | 든든한암보험    | 순수보장형 | 만기환급없음        | Y      |
+| HA       | 12601002 | 행복한종신보험   | 만기환급형 | 80세만기         | Y      |
+| KB       | 12601003 | 간편상해보험    | 갱신형   | 3년갱신          | Y      |
 
-| compy_cd | prdt_cd | insur_cd | sex | age | std_contract_amt | premium | use_yn |
-| -------- | ------- | -------- | --- | --- | ---------------- | ------- | ------ |
-| INS01    | PRD001  | TRT_001  | M   | 40  | 10000000         | 12000   | Y      |
-| INS01    | PRD001  | TRT_002  | M   | 40  | 10000000         | 1000    | Y      |
-| INS01    | PRD001  | TRT_MAIN | M   | 40  | 50000000         | 25000   | Y      |
-| INS02    | PRD002  | TRT_001  | M   | 40  | 10000000         | 11500   | Y      |
+#### F. TB_TIC_PRDT_D (담보 상세 - mmapi DB)
+
+**컬럼 명세:**
+
+| 컬럼명          | 데이터 타입   | 길이  | NULL 허용 | 설명        |
+|:------------ |:-------- |:--- |:------- |:--------- |
+| compy_cd     | nvarchar | 10  | NO      | 보험사 코드    |
+| prdt_cd      | nvarchar | 20  | NO      | 상품 코드     |
+| insur_cd     | nvarchar | 20  | NO      | 담보(특약) 코드 |
+| insur_nm     | nvarchar | 100 | YES     | 담보명       |
+| insur_bojang | nvarchar | 200 | YES     | 보장 내용     |
+| pay_term     | nvarchar | 20  | YES     | 납입 기간     |
+
+**샘플 데이터:**
+
+| compy_cd | prdt_cd  | insur_cd | insur_nm | insur_bojang | pay_term |
+| -------- | -------- | -------- | -------- | ------------ | -------- |
+| DB       | 12601001 | 20101    | 일반암진단비   | 암진단시 지급      | 20년납     |
+| DB       | 12601001 | 20102    | 유사암진단비   | 유사암진단시 지급    | 20년납     |
+| DB       | 12601001 | 11201    | 주계약(사망)  | 사망시 지급       | 20년납     |
+| HA       | 12601002 | 30101    | 뇌혈관질환진단비 | 뇌혈관질환 진단시 지급 | 20년납     |
+
+#### G. TB_TIC_PRDT_PRICE (담보별 기준 보험료 - insu_product_backup DB)
+
+**실제 테이블:** `insu_product_backup.dbo.TB_TIC_PRDT_PRICE`
+
+**컬럼 명세:**
+
+| 컬럼명              | 데이터 타입   | 길이  | NULL 허용 | 설명        |
+|:---------------- |:-------- |:--- |:------- |:--------- |
+| compy_cd         | nvarchar | 10  | NO      | 보험사 코드    |
+| prdt_cd          | nvarchar | 20  | NO      | 상품 코드     |
+| insur_cd         | nvarchar | 20  | NO      | 담보(특약) 코드 |
+| sex              | nvarchar | 1   | YES     | 성별 (M/F)  |
+| age              | int      | -   | YES     | 보험 나이     |
+| std_contract_amt | decimal  | -   | YES     | 기준 가입금액   |
+| premium          | decimal  | -   | YES     | 기준 보험료    |
+| pay_term         | nvarchar | 20  | YES     | 납입 기간     |
+| renewal_yn       | nvarchar | 1   | YES     | 갱신 여부     |
+| renewal_pd       | nvarchar | 20  | YES     | 갱신 기간     |
+| notice_yn        | nvarchar | 1   | YES     | 고지 여부     |
+| use_yn           | nvarchar | 1   | YES     | 사용 여부     |
+
+**샘플 데이터 (plan_id: 921081111041, gender: M, age: 40 기준):**
+
+| compy_cd | prdt_cd  | insur_cd | sex | age | std_contract_amt | premium | pay_term | renewal_yn | notice_yn | use_yn |
+| -------- | -------- | -------- | --- | --- | ---------------- | ------- | -------- | ---------- | --------- | ------ |
+| DB       | 12601001 | 20101    | M   | 40  | 10000000         | 12000   | 20년납     | N          | N         | Y      |
+| DB       | 12601001 | 20102    | M   | 40  | 10000000         | 1000    | 20년납     | N          | N         | Y      |
+| DB       | 12601001 | 11201    | M   | 40  | 50000000         | 25000   | 20년납     | N          | N         | Y      |
+| HA       | 12601002 | 30101    | M   | 40  | 10000000         | 11500   | 20년납     | N          | N         | Y      |
+| KB       | 12601003 | 40101    | M   | 40  | 10000000         | 9800    | 20년납     | Y          | N         | Y      |
 
 #### H. TB_MMLFCP_COVERAGE_INSUR_MAPPING (보장-담보 매핑)
 
@@ -293,17 +430,17 @@ SELECT TOP 5
 
 **컬럼 명세:**
 
-| 컬럼명       | 데이터 타입      | 길이   | NULL 허용 | 설명           |
-|:---------- |:----------- |:----- |:-------- |:------------ |
-| CD_ID      | nvarchar    | 20    | NO       | 코드 ID        |
-| CD_NM      | nvarchar    | 50    | YES      | 코드명          |
-| CD_DESC    | nvarchar    | 100   | YES      | 코드 설명        |
-| UPP_CD_ID  | nvarchar    | 20    | NO       | 상위 코드 ID (그룹코드) |
-| ATTR01     | nvarchar    | 50    | YES      | 속성1           |
-| ATTR02     | nvarchar    | 20    | YES      | 속성2           |
-| ATTR03     | nvarchar    | 20    | YES      | 속성3           |
-| ORDER_SEQ  | int         | -     | YES      | 정렬 순서         |
-| USE_YN     | nvarchar    | 1     | YES      | 사용 여부 (기본값: Y) |
+| 컬럼명       | 데이터 타입   | 길이  | NULL 허용 | 설명              |
+|:--------- |:-------- |:--- |:------- |:--------------- |
+| CD_ID     | nvarchar | 20  | NO      | 코드 ID           |
+| CD_NM     | nvarchar | 50  | YES     | 코드명             |
+| CD_DESC   | nvarchar | 100 | YES     | 코드 설명           |
+| UPP_CD_ID | nvarchar | 20  | NO      | 상위 코드 ID (그룹코드) |
+| ATTR01    | nvarchar | 50  | YES     | 속성1             |
+| ATTR02    | nvarchar | 20  | YES     | 속성2             |
+| ATTR03    | nvarchar | 20  | YES     | 속성3             |
+| ORDER_SEQ | int      | -   | YES     | 정렬 순서           |
+| USE_YN    | nvarchar | 1   | YES     | 사용 여부 (기본값: Y)  |
 
 **샘플 데이터:**
 
@@ -319,91 +456,91 @@ SELECT TOP 5
 
 **컬럼 명세:**
 
-| 컬럼명     | 데이터 타입      | 길이   | NULL 허용 | 설명              |
-|:-------- |:----------- |:----- |:-------- |:--------------- |
-| ga_id    | nvarchar    | 5     | NO       | GA ID (고객사 ID)  |
-| ap_name  | nvarchar    | 10    | NO       | 애플리케이션 이름      |
-| api_name | nvarchar    | 50    | NO       | API 이름          |
-| in_date  | datetime    | -     | YES      | 접근 일시 (기본값: 현재시간) |
+| 컬럼명      | 데이터 타입   | 길이  | NULL 허용 | 설명                |
+|:-------- |:-------- |:--- |:------- |:----------------- |
+| ga_id    | nvarchar | 5   | NO      | GA ID (고객사 ID)    |
+| ap_name  | nvarchar | 10  | NO      | 애플리케이션 이름         |
+| api_name | nvarchar | 50  | NO      | API 이름            |
+| in_date  | datetime | -   | YES     | 접근 일시 (기본값: 현재시간) |
 
 #### N. tb_mmapi_gen_jwt_log (JWT 생성 로그)
 
 **컬럼 명세:**
 
-| 컬럼명     | 데이터 타입      | 길이   | NULL 허용 | 설명              |
-|:-------- |:----------- |:----- |:-------- |:--------------- |
-| ga_id    | nvarchar    | 5     | NO       | GA ID (고객사 ID)  |
-| in_date  | datetime    | -     | YES      | 생성 일시 (기본값: 현재시간) |
+| 컬럼명     | 데이터 타입   | 길이  | NULL 허용 | 설명                |
+|:------- |:-------- |:--- |:------- |:----------------- |
+| ga_id   | nvarchar | 5   | NO      | GA ID (고객사 ID)    |
+| in_date | datetime | -   | YES     | 생성 일시 (기본값: 현재시간) |
 
 #### O. TB_GA_INFO (GA 정보 - common DB 시노님)
 
 **컬럼 명세:**
 
-| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
-|:------ |:----------- |:---- |:--------- |:---- |
-| ga_id | nvarchar | 5 | NO | GA ID (고객사 ID) |
-| ga_name | nvarchar | 100 | YES | GA 이름 |
-| use_yn | nvarchar | 1 | YES | 사용 여부 |
+| 컬럼명     | 데이터 타입   | 길이  | NULL 허용 | 설명             |
+|:------- |:-------- |:--- |:------- |:-------------- |
+| ga_id   | nvarchar | 5   | NO      | GA ID (고객사 ID) |
+| ga_name | nvarchar | 100 | YES     | GA 이름          |
+| use_yn  | nvarchar | 1   | YES     | 사용 여부          |
 
 **샘플 데이터:**
 
 | ga_id | ga_name | use_yn |
 | ----- | ------- | ------ |
-| GA001 | A생명 GA | Y |
-| GA002 | B화재 GA | Y |
+| GA001 | A생명 GA  | Y      |
+| GA002 | B화재 GA  | Y      |
 
 #### P. tb_li_prdt (생명보험 상품 - mmlicp DB 시노님)
 
 **컬럼 명세:**
 
-| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
-|:------ |:----------- |:---- |:--------- |:---- |
-| product_code | nvarchar | 20 | NO | 상품 코드 |
-| product_name | nvarchar | 200 | YES | 상품명 |
-| company_code | nvarchar | 10 | YES | 보험사 코드 |
-| use_yn | nvarchar | 1 | YES | 사용 여부 |
+| 컬럼명          | 데이터 타입   | 길이  | NULL 허용 | 설명     |
+|:------------ |:-------- |:--- |:------- |:------ |
+| product_code | nvarchar | 20  | NO      | 상품 코드  |
+| product_name | nvarchar | 200 | YES     | 상품명    |
+| company_code | nvarchar | 10  | YES     | 보험사 코드 |
+| use_yn       | nvarchar | 1   | YES     | 사용 여부  |
 
 **샘플 데이터:**
 
 | product_code | product_name | company_code | use_yn |
 | ------------ | ------------ | ------------ | ------ |
-| 12601001 | 든든한 암보험 | DB | Y |
-| 12601002 | 행복한 종신보험 | HA | Y |
+| 12601001     | 든든한 암보험      | DB           | Y      |
+| 12601002     | 행복한 종신보험     | HA           | Y      |
 
 #### Q. tb_li_prdt_price (생명보험 상품 보험료 - mmlicp DB 시노님)
 
 **컬럼 명세:**
 
-| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
-|:------ |:----------- |:---- |:--------- |:---- |
-| product_code | nvarchar | 20 | NO | 상품 코드 |
-| gender | nvarchar | 1 | YES | 성별 (M/F) |
-| age | int | - | YES | 나이 |
-| premium | decimal | - | YES | 보험료 |
+| 컬럼명          | 데이터 타입   | 길이  | NULL 허용 | 설명       |
+|:------------ |:-------- |:--- |:------- |:-------- |
+| product_code | nvarchar | 20  | NO      | 상품 코드    |
+| gender       | nvarchar | 1   | YES     | 성별 (M/F) |
+| age          | int      | -   | YES     | 나이       |
+| premium      | decimal  | -   | YES     | 보험료      |
 
 **샘플 데이터:**
 
 | product_code | gender | age | premium |
 | ------------ | ------ | --- | ------- |
-| 12601001 | M | 40 | 150000 |
-| 12601001 | F | 40 | 120000 |
+| 12601001     | M      | 40  | 150000  |
+| 12601001     | F      | 40  | 120000  |
 
 #### R. tb_od_products (OC 상품 - mmoc DB 시노님)
 
 **컬럼 명세:**
 
-| 컬럼명 | 데이터 타입 | 길이 | NULL 허용 | 설명 |
-|:------ |:----------- |:---- |:--------- |:---- |
-| product_id | nvarchar | 20 | NO | 상품 ID |
-| product_name | nvarchar | 200 | YES | 상품명 |
-| use_yn | nvarchar | 1 | YES | 사용 여부 |
+| 컬럼명          | 데이터 타입   | 길이  | NULL 허용 | 설명    |
+|:------------ |:-------- |:--- |:------- |:----- |
+| product_id   | nvarchar | 20  | NO      | 상품 ID |
+| product_name | nvarchar | 200 | YES     | 상품명   |
+| use_yn       | nvarchar | 1   | YES     | 사용 여부 |
 
 **샘플 데이터:**
 
 | product_id | product_name | use_yn |
 | ---------- | ------------ | ------ |
-| OC001 | 해외여행보험 | Y |
-| OC002 | 해외학생보험 | Y |
+| OC001      | 해외여행보험       | Y      |
+| OC002      | 해외학생보험       | Y      |
 
 #### K. TB_MMLFCP_COVERAGE (보장 마스터)
 
@@ -449,8 +586,6 @@ SELECT TOP 5
 ## 5. 보장별 보험료/담보별[주특약별] 보험료 데이터간 간극
 
 실제 사람이 보는 수준에서는 보장별 보험료를 보여주며 비교하는 것이 편리하지만, 실제 보험상품은 하나의 보장을 하나의 주특약이 아닌 다수의 주특약으로 소분된 경우도 존재함, 이럴때는 합산 보험료를 생성해야 하는데, 문제는 b011(암수술비가)  하나가 다수의 주특약으로 쪼개지는 경우 가입금액(혹은 보장금액)이 부속된 주특약별로 동일하지 않고 300/60 으로 상이함, 동일한 이슈로 e009(질병상해(1~5종)수술(5종기준)도 10/30/50/100/300 으로 5종의 소분된 개별 특약의 가입금액(보장금액)이 계단식임
-
-  
 
 | coverage_cd | coverage_name                  | insur_cd | guide_insur_amount |
 | ----------- | ------------------------------ | -------- | ------------------ |
@@ -1089,3 +1224,32 @@ SELECT TOP 5
 | Q003        | 크라운치료                          | 93300    | 1000.0             |
 | Q004        | 특정임플란트치조골치료                    | 93400    | 1000.0             |
 | Q005        | 소액치과치료                         | 93500    | 1000.0             |
+
+# 6. 담보별 보험료데이터 집계 이슈
+
+## coverage_cd(대표보장으)로 특약들을 묶어야함
+
+이때 coverage_cd와 1대 n으로 되어 list로 컬럼명을 바꾸고|로 구분자로 압축시킬 대상이 insur_item_cde, insur_tem_name, insur_item_coverage
+payment_due는 top 1, guide_contract_amount는 max
+company_name, coverage_name 도 top 1
+
+
+
+## 대충 컬럼순서는 다음과 같음
+
+company_code, company_name, product_code, product_name, coverage_cd, coverage_name,
+
+ insur_item_code_list, insur_item_name_list, insur_item_coverage_list
+
+payment_due(top), guide_contract_amount(max), guide_premium(sum)
+
+# 7. 기본계약(필수담보보험료) 집계 이슈
+
+필수담보보험료는 기본계약이며
+
+* 보장이 지각각이라서 담보코드를 보장코드로 집계시키면 안됨, 별도의 보장코드(A000)로 프로그램 내부 로직으로 만들어서 별도 운영 하는게 맞을듯함 그리고,
+
+* 그렇다고 개별플랜에서 회사별로 기본계약 레코드가 유일하게 1건이지도 않음(사망+80%이상장해+80%미만장해) 
+  개별플랜+회사별로 집계하고, insur_item_code, insur_item_coverage는 목록으로 압축, payment_due는 top1, contract_amount는 max, premium은 sum으로 처리
+
+# 8. 전체 상품 데이터 다운로드 가능성 검토
